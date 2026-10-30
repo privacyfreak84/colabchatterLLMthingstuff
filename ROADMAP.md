@@ -41,7 +41,7 @@ This roadmap records the intended sequence and decision gates. The current, evid
 
 ## Pass 4 — Chatterbox Hindi-to-English voice bridges
 
-**Implemented in branch; GPU audition pending**
+**Merged to main (PR #9); 32 CPU tests passed; GPU audition pending**
 
 The current branch adds two controlled ways to retain Chatterbox while separating pronunciation generation from English narrator rendering:
 
