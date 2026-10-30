@@ -104,3 +104,22 @@ def test_bundle_preserves_sources_and_writes_review_outputs(tmp_path: Path):
     assert (out / "title_page_opening_proposal.txt").read_text(encoding="utf-8").startswith("A Book")
     assert (out / "pronunciation_dictionary_draft.csv").is_file()
     assert (out / "manuscript_repair_review.csv").is_file()
+ 
+
+def test_quoted_lowercase_continuation_is_proposed():
+    candidate = _make_candidate(
+        block("p002-b006", 2, 6, 'neither "created" nor'),
+        block("p003-b001", 3, 1, '"uncreated," neither mundane nor supernal.'),
+        section([]),
+    )
+    assert candidate is not None
+    assert candidate["proposed_join"] == 'neither "created" nor "uncreated," neither mundane nor supernal.'
+
+
+def test_quoted_uppercase_new_sentence_is_not_auto_joined():
+    candidate = _make_candidate(
+        block("p002-b006", 2, 6, "The previous clause continues"),
+        block("p003-b001", 3, 1, '"Another paragraph begins here.'),
+        section([]),
+    )
+    assert candidate is None
