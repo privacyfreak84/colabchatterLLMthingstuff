@@ -6,7 +6,7 @@ A document-first, resumable audiobook pipeline centred on **Chatterbox Multiling
 
 [**Open Stage 1: PDF reconnaissance and manuscript approval**](https://colab.research.google.com/github/privacyfreak84/colabchatterLLMthingstuff/blob/main/notebooks/01_pdf_reconnaissance.ipynb)
 
-[**Open Stage 2: Chatterbox V3 pronunciation auditions**](https://colab.research.google.com/github/privacyfreak84/colabchatterLLMthingstuff/blob/main/notebooks/02_pronunciation_auditions.ipynb)
+[**Open Stage 2: repaired Chatterbox V3 pronunciation auditions**](https://colab.research.google.com/github/privacyfreak84/colabchatterLLMthingstuff/blob/main/notebooks/02_pronunciation_auditions.ipynb)
 
 The notebook checks out the latest main branch, expands the starter engine archive into a separate `engine/` directory, and runs extraction against `Buddhist_Yoga_TTS_clean.pdf`. It then runs the lightweight repair-review helper in `tools/`. Results are saved to Google Drive and survive Colab resets.
 
@@ -37,7 +37,7 @@ The notebook checks out the latest main branch, expands the starter engine archi
 | Token-aware chunking and resumable synthesis | Not started |
 | ASR verification and audiobook mastering | Planned |
 
-The repair helper never overwrites the source PDF, extracted manuscript, original main/Notes tracks, or section files. It applies high-heuristic cross-page joins only to separate proposed copies, and only when the exact adjacent block pair appears uniquely in the source track. All same-page candidates remain review-only. The approval helper copies the proposed tracks into separate approved files only after validating the complete review bundle; it records accepted candidate IDs and excluded same-page items. Pronunciation auditions use source spellings and exact source-context sentences, with spoken forms left blank until listening and approval. Stage 2 compares source English spelling, IAST transliteration, and Devanagari Hindi through the general Chatterbox Multilingual V3 model; tokenizer unknowns are detected before synthesis, and every generated sample is logged with its seed and hash.
+The repair helper never overwrites the source PDF, extracted manuscript, original main/Notes tracks, or section files. It applies high-heuristic cross-page joins only to separate proposed copies, and only when the exact adjacent block pair appears uniquely in the source track. All same-page candidates remain review-only. The approval helper copies the proposed tracks into separate approved files only after validating the complete review bundle; it records accepted candidate IDs and excluded same-page items. Pronunciation auditions use source spellings and exact source-context sentences, with spoken forms left blank until listening and approval. Stage 2 compares source English spelling, IAST transliteration, and Devanagari Hindi through Chatterbox Multilingual V3. It installs a pinned upstream Git commit rather than the stale PyPI 0.1.7 wheel, verifies that the V3 selector is present and the legacy alignment analyser is absent, preflights tokenizer unknowns and checkpoint files, stores the selected model files as ordinary Drive files rather than in the global Hugging Face cache, runs an English/Hindi smoke test first, and checkpoints every generated sample with its seed and hash. No `model.generate` monkey-patching or `torch.load(weights_only=False)` workaround is used.
 
 ## Local use
 
@@ -62,4 +62,5 @@ pytest -q
 - Keep pronunciation corrections explicit, reviewable, and reversible.
 - No full-book audio synthesis until the user approves the repaired manuscript and pronunciation dictionary.
 - Pronunciation auditions are a limited test run and do not authorize full-book synthesis.
+- Stage 2 uses a pinned Chatterbox Git revision because PyPI 0.1.7 lacks the optional `t3_model` selector and contains a legacy alignment analyser that is absent from the pinned upstream source.
 - Short pronunciation auditions are a separate, reversible review activity; they do not authorize full-book synthesis.

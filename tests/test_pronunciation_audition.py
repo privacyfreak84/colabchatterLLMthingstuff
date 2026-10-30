@@ -1,28 +1,37 @@
-from tools.pronunciation_audition import build_audition_tasks, preflight_tasks
+from tools.pronunciation_audition import (
+    DEFAULT_GENERATION_PARAMETERS,
+    build_audition_tasks,
+    preflight_tasks,
+)
 import pytest
 
 TERMS = [
-    ("P001", "Avalokiteshvara", "Then Avalokiteshvara spoke to the Buddha."),
-    ("P002", "Avatamsaka", "The Avatamsaka Sutra is discussed here."),
-    ("P003", "Buddha", "The Buddha spoke."),
-    ("P004", "Gautama", "Gautama Buddha taught this."),
-    ("P005", "Maitreya", "Maitreya spoke to the Buddha."),
-    ("P006", "Manjushri", "Manjushri asked a question."),
-    ("P007", "nirvana", "They discussed nirvana."),
-    ("P008", "samsara", "The term samsara appears here."),
-    ("P009", "Sandhinirmochana-sutra", "The Sandhinirmochana-sutra is a source."),
-    ("P010", "Subhuti", "Subhuti answered."),
-    ("P011", "sutra", "The sutra is translated."),
-    ("P012", "Vijnanavada", "Vijnanavada is a tradition."),
-    ("P013", "Yogachara", "Yogachara is the practice."),
+    ("P001", "Avalokiteshvara", "Then the enlightening being Avalokiteshvara spoke to the Buddha."),
+    ("P002", "Avatamsaka", "The Flower Ornament Scripture is also known as the Avatamsaka Sutra."),
+    ("P003", "Buddha", "Gautama Buddha taught this."),
+    ("P004", "Gautama", "The Buddha was known as Gautama."),
+    ("P005", "Maitreya", "Then the enlightening being Maitreya spoke to the Buddha."),
+    ("P006", "Manjushri", "Manjushri asked the Buddha a question."),
+    ("P007", "nirvana", "They discussed the meaning of nirvana."),
+    ("P008", "samsara", "Samsara refers to repetitive cycles."),
+    ("P009", "Sandhinirmochana-sutra", "This volume presents a translation of the Sandhinirmochana-sutra."),
+    ("P010", "Subhuti", "The Buddha said to the reverend Subhuti."),
+    ("P011", "sutra", "This sutra is a complete classical sourcebook."),
+    ("P012", "Vijnanavada", "The tradition is known as Vijnanavada."),
+    ("P013", "Yogachara", "The tradition is also known as Yogachara."),
 ]
 
 
 def rows():
     return [
-        {"audition_id": i, "source_term": term, "occurrences": "1", "pages": "2",
-         "context_prompt": context}
-        for i, term, context in TERMS
+        {
+            "audition_id": audition_id,
+            "source_term": term,
+            "occurrences": "1",
+            "pages": "2",
+            "context_prompt": context,
+        }
+        for audition_id, term, context in TERMS
     ]
 
 
@@ -57,7 +66,7 @@ def test_iast_variant_replaces_only_the_target_term():
     tasks = build_audition_tasks(rows())
     task = next(x for x in tasks if x["task_id"] == "P001_EN_IAST")
     assert task["candidate_form"] == "Avalokiteśvara"
-    assert task["text"] == "Then Avalokiteśvara spoke to the Buddha."
+    assert task["text"] == "Then the enlightening being Avalokiteśvara spoke to the Buddha."
     assert task["language_id"] == "en"
 
 
@@ -75,10 +84,18 @@ def test_devanagari_variant_uses_hindi_language_id():
     assert task["reference_language"] == "hi"
 
 
+def test_sandhinirmochana_uses_sanskrit_anusvara_spelling():
+    tasks = build_audition_tasks(rows())
+    dev = next(x for x in tasks if x["task_id"] == "P009_HI_DEVANAGARI")
+    iast = next(x for x in tasks if x["task_id"] == "P009_EN_IAST")
+    assert "संधिनिर्मोचन-सूत्र" in dev["text"]
+    assert "Saṃdhinirmocana-sūtra" in iast["text"]
+
+
 def test_hyphenated_book_term_replacement_is_exact():
     tasks = build_audition_tasks(rows())
     task = next(x for x in tasks if x["task_id"] == "P009_EN_IAST")
-    assert task["text"] == "The Saṃdhinirmocana-sūtra is a source."
+    assert task["text"] == "This volume presents a translation of the Saṃdhinirmocana-sūtra."
 
 
 def test_missing_target_term_in_context_is_rejected():
@@ -101,3 +118,14 @@ def test_duplicate_audition_ids_are_rejected():
     data[1]["audition_id"] = data[0]["audition_id"]
     with pytest.raises(ValueError, match="Duplicate audition_id"):
         build_audition_tasks(data)
+
+
+def test_generation_parameter_defaults_match_the_v3_generate_api():
+    assert DEFAULT_GENERATION_PARAMETERS == {
+        "exaggeration": 0.5,
+        "cfg_weight": 0.5,
+        "temperature": 0.7,
+        "repetition_penalty": 1.2,
+        "min_p": 0.05,
+        "top_p": 0.95,
+    }
