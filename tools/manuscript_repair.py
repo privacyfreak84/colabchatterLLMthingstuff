@@ -15,7 +15,7 @@ from typing import Any, Iterable
 
 ALGORITHM_VERSION = "0.1.0"
 _TERMINAL = re.compile(r"[.!?;:][\"'”’)]*\s*$")
-_LOWER_OR_QUOTE = re.compile(r"^[a-z'\"“‘(\[]")
+_LOWER_OR_QUOTE = re.compile(r"^(?:[a-z]|[\"'“‘(\[]\s*[a-z])")
 _TRAILING_HYPHEN = re.compile(r"[-‐‑]\s*$")
 
 # Additional terms missed by the capitalization heuristic. These are inventory
