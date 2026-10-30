@@ -2,7 +2,7 @@
 
 **Last updated:** 2026-10-31  
 **Current pass:** Chatterbox Hindi-to-English voice bridge implementation  
-**Working branch:** experiments/chatterbox-hindi-english-bridges  
+**Merged to:** main via PR #9, merge commit 047ac7f40e6e539da13d7b3fcf1d5381ada9b175  
 **Full-book synthesis:** LOCKED
 
 ## Executive summary
@@ -11,7 +11,7 @@ The project is pursuing a complete, high-quality, zero-cost audiobook of the sup
 
 The manuscript approval checkpoint is complete. The original 36 pronunciation auditions succeeded, but the English spelling/IAST variants were not good enough. A subsequent eight-clip English refinement experiment was also rejected after listening because the speech was slow, improperly pronounced, and artifact-ridden.
 
-The current pass implements two more promising Chatterbox-native routes that keep Hindi pronunciation generation separate from English narrator rendering. Code and CPU-only task-builder tests are in the working branch. The new experiment has **not** yet been run on a GPU and has **not** been listened to.
+The current pass implements two more promising Chatterbox-native routes that keep Hindi pronunciation generation separate from English narrator rendering. PR #9 is merged to main. The new experiment has **not** yet been run on a GPU and has **not** been listened to.
 
 ## Verified completed work
 
@@ -41,13 +41,14 @@ The current pass implements two more promising Chatterbox-native routes that kee
 
 ## Current pass: Hindi-to-English Chatterbox bridges
 
-**Implementation state:** written in the working branch.  
+**Implementation state:** merged to main in PR #9.  
+**Merge commit:** 047ac7f40e6e539da13d7b3fcf1d5381ada9b175.  
 **Static notebook check:** passed; the updated notebook parses as valid nbformat 4 JSON and contains a default-OFF experiment gate.  
-**Automated CI:** pending pull-request run at the time of this update.  
+**Automated CI:** passed, 32 tests in 0.06 seconds (GitHub Actions run 41135587975).  
 **GPU execution:** not run.  
 **Listening approval:** not run.
 
-Files added or changed in this pass:
+Files added or changed in this pass (now on main):
 
 - tools/chatterbox_voice_bridge.py — resumable, hash-verified bridge runner.
 - tests/test_chatterbox_voice_bridge.py — CPU-only tests for the deterministic 24-task plan and its settings.
@@ -84,8 +85,8 @@ The English and Hindi target references are the public Chatterbox demo clips alr
 
 ## Immediate next action
 
-1. Complete the PR/CI checks for this branch.
-2. Once the notebook/helper changes are merged to main, open the updated Stage 2 Colab notebook, run from the top, leave the earlier full-audition and English-probe gates OFF, and enable only section 11.
+1. Open the updated Stage 2 Colab notebook from main: https://colab.research.google.com/github/privacyfreak84/colabchatterLLMthingstuff/blob/main/notebooks/02_pronunciation_auditions.ipynb
+2. Run from the top. Keep RUN_FULL_AUDITIONS and RUN_ENGLISH_REFINEMENT_PROBES OFF; enable only RUN_HINDI_ENGLISH_BRIDGE_EXPERIMENTS in section 11.
 3. Listen to all 24 clips, especially whether Hindi pronunciation survives while the English target voice remains natural and consistent.
 4. Upload the generated bridge bundle as nextrecon4.txt.
 5. Update this status file with the actual generated counts, manifest/checkpoint hashes, listening decisions, and next experiment.
