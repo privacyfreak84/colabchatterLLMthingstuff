@@ -17,6 +17,8 @@ The notebook checks out the latest main branch, expands the starter engine archi
 - Pronunciation candidate inventory and editable review CSV
 - Warnings for suspicious line-break hyphenation and repeated page-edge text
 - **Proposed** narration copies with provenance-linked cross-page join suggestions
+- Explicit approval record and separate approved main/Notes narration masters
+- Pronunciation audition CSV and listening prompts built from exact source-context sentences
 - Same-page continuation candidates listed for manual review, never auto-merged
 - Optional title-page opening proposal
 - A focused pronunciation dictionary draft with blank spoken forms pending audition
@@ -27,12 +29,13 @@ The notebook checks out the latest main branch, expands the starter engine archi
 |---|---|
 | PDF extraction and structural reconnaissance | Implemented; 17 foundation tests passed |
 | Provenance-aware narration repair proposals | Implemented in review helper; 10 helper tests passed |
+| Approved manuscript tracks and pronunciation audition prompts | Implemented; approval is scoped to 48 applied cross-page joins, with same-page candidate excluded |
 | Pronunciation candidate inventory | First-pass heuristic plus curated draft; human approval required |
 | Chatterbox V3 adapter | Initial adapter; GPU integration not yet validated |
 | Token-aware chunking and resumable synthesis | Not started |
 | ASR verification and audiobook mastering | Planned |
 
-The repair helper never overwrites the source PDF, extracted manuscript, original main/Notes tracks, or section files. It applies high-heuristic cross-page joins only to separate proposed copies, and only when the exact adjacent block pair appears uniquely in the source track. All same-page candidates remain review-only.
+The repair helper never overwrites the source PDF, extracted manuscript, original main/Notes tracks, or section files. It applies high-heuristic cross-page joins only to separate proposed copies, and only when the exact adjacent block pair appears uniquely in the source track. All same-page candidates remain review-only. The approval helper copies the proposed tracks into separate approved files only after validating the complete review bundle; it records accepted candidate IDs and excluded same-page items. Pronunciation auditions use source spellings and exact source-context sentences, with spoken forms left blank until listening and approval.
 
 ## Local use
 
@@ -55,4 +58,5 @@ pytest -q
 - Respect the checkpoint's real tokenizer limits, not character-count guesses.
 - Persist every expensive synthesis result and make chunk-level retries reproducible.
 - Keep pronunciation corrections explicit, reviewable, and reversible.
-- No audio synthesis until the user approves the repaired manuscript and pronunciation dictionary.
+- No full-book audio synthesis until the user approves the repaired manuscript and pronunciation dictionary.
+- Short pronunciation auditions are a separate, reversible review activity; they do not authorize full-book synthesis.
