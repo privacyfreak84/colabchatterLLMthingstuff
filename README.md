@@ -4,9 +4,9 @@ A document-first, resumable audiobook pipeline centred on **Chatterbox Multiling
 
 ## Start in Google Colab
 
-[**Open the PDF reconnaissance and repair-review notebook**](https://colab.research.google.com/github/privacyfreak84/colabchatterLLMthingstuff/blob/feat/manuscript-repair-review/notebooks/01_pdf_reconnaissance.ipynb)
+[**Open the PDF reconnaissance and repair-review notebook**](https://colab.research.google.com/github/privacyfreak84/colabchatterLLMthingstuff/blob/main/notebooks/01_pdf_reconnaissance.ipynb)
 
-The notebook checks out the review branch, expands the starter engine archive into a separate `engine/` directory, and runs extraction against `Buddhist_Yoga_TTS_clean.pdf`. It then runs the lightweight repair-review helper in `tools/`. Results are saved to Google Drive and survive Colab resets.
+The notebook checks out the latest main branch, expands the starter engine archive into a separate `engine/` directory, and runs extraction against `Buddhist_Yoga_TTS_clean.pdf`. It then runs the lightweight repair-review helper in `tools/`. Results are saved to Google Drive and survive Colab resets.
 
 ## Stage 1 outputs
 
