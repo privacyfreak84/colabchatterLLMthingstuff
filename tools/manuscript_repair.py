@@ -14,9 +14,9 @@ from pathlib import Path
 from typing import Any, Iterable
 
 ALGORITHM_VERSION = "0.1.0"
-_TERMINAL = re.compile(r"[.!?;:][\"'”’)]*\\s*$")
-_LOWER_OR_QUOTE = re.compile(r"^[a-z'\"“‘(\\[]")
-_TRAILING_HYPHEN = re.compile(r"[-‐‑]\\s*$")
+_TERMINAL = re.compile(r"[.!?;:][\"'”’)]*\s*$")
+_LOWER_OR_QUOTE = re.compile(r"^[a-z'\"“‘(\[]")
+_TRAILING_HYPHEN = re.compile(r"[-‐‑]\s*$")
 
 # Additional terms missed by the capitalization heuristic. These are inventory
 # entries only. No respellings or language routing are inferred.
@@ -75,7 +75,7 @@ def _make_candidate(
     dehyphenate = bool(_TRAILING_HYPHEN.search(left))
     action = "dehyphenate_and_join" if dehyphenate else "join_with_space"
     joined = (
-        re.sub(r"[-‐‑]\\s*$", "", left) + right
+        re.sub(r"[-‐‑]\s*$", "", left) + right
         if dehyphenate else left + " " + right
     )
     if scope == "within_page":
@@ -112,7 +112,7 @@ def _apply_cross_page_proposals(
         if candidate["scope"] != "cross_page":
             continue
         left, right = candidate["previous_text"], candidate["next_text"]
-        patterns = [left + separator + right for separator in ("\\n\\n", "\\n")]
+        patterns = [left + separator + right for separator in ("\n\n", "\n")]
         counts = [(pattern, revised.count(pattern)) for pattern in patterns]
         matches = [pattern for pattern, count in counts if count == 1]
         total = sum(count for _, count in counts)
@@ -155,7 +155,7 @@ def _pronunciation_draft(
     terms.update(EXTRA_TERMS)
     rows = []
     for term, category in sorted(terms.items(), key=lambda item: item[0].casefold()):
-        pattern = re.compile(rf"(?<!\\w){re.escape(term)}(?!\\w)", re.IGNORECASE)
+        pattern = re.compile(rf"(?<!\w){re.escape(term)}(?!\w)", re.IGNORECASE)
         matches = [pattern.search(_normal_text(block.get("text"))) for block in blocks]
         occurrences = sum(len(pattern.findall(_normal_text(block.get("text")))) for block in blocks)
         if not occurrences:
@@ -170,7 +170,7 @@ def _pronunciation_draft(
             if match:
                 text = _normal_text(block.get("text"))
                 lo, hi = max(0, match.start() - 90), min(len(text), match.end() + 130)
-                context = text[lo:hi].replace("\\n", " ")
+                context = text[lo:hi].replace("\n", " ")
                 break
         rows.append({
             "source_term": term,
@@ -248,11 +248,11 @@ def build_review_bundle(
         [b for b in blocks if int(b.get("page", 0)) == 1],
         key=lambda b: int(b.get("order", 0)),
     )
-    title_text = "\\n\\n".join(
+    title_text = "\n\n".join(
         _normal_text(b.get("text")) for b in title_blocks if _normal_text(b.get("text"))
     )
     title_path = out / "title_page_opening_proposal.txt"
-    title_path.write_text(title_text + ("\\n" if title_text else ""), encoding="utf-8")
+    title_path.write_text(title_text + ("\n" if title_text else ""), encoding="utf-8")
 
     pron_rows = _pronunciation_draft(blocks, candidates_path)
     pron_path = out / "pronunciation_dictionary_draft.csv"
