@@ -26,7 +26,7 @@ The notebook checks out the review branch, expands the starter engine archive in
 | Component | Status |
 |---|---|
 | PDF extraction and structural reconnaissance | Implemented; 17 foundation tests passed |
-| Provenance-aware narration repair proposals | Implemented in review helper; 8 helper tests passed |
+| Provenance-aware narration repair proposals | Implemented in review helper; 10 helper tests passed |
 | Pronunciation candidate inventory | First-pass heuristic plus curated draft; human approval required |
 | Chatterbox V3 adapter | Initial adapter; GPU integration not yet validated |
 | Token-aware chunking and resumable synthesis | Not started |
