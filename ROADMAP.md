@@ -41,7 +41,7 @@ This roadmap records the intended sequence and decision gates. The current, evid
 
 ## Pass 4 — Chatterbox Hindi-to-English voice bridges
 
-**Merged to main (PR #9); 32 CPU tests passed; GPU audition pending**
+**Merged to main (PR #9); 32 CPU tests passed; first GPU audition completed (24/24); user feedback positive, route selection pending**
 
 The current branch adds two controlled ways to retain Chatterbox while separating pronunciation generation from English narrator rendering:
 
@@ -59,7 +59,7 @@ For four representative terms, create six comparisons per term:
 
 The pace-oriented preset (exaggeration=0.7, cfg_weight=0.3) is an experiment informed by upstream guidance, not an assumed improvement. Both references are currently public Chatterbox demo voices, not the final narrator. The GPU run and human listening review are still required.
 
-**Decision gate:** keep a route only if pronunciation is accurate, pacing is natural, the converted voice is acceptably similar, and no objectionable artefacts are audible. Reject a route that sounds like a language/voice splice.
+**Next decision gate:** identify the best route per term (HYBRID versus VC, including baseline versus pace) and verify pronunciation, natural pacing, voice similarity, and artifacts using the user's listening judgment. The positive overall response is encouraging but does not yet identify a selected variant. Retest any winner with the intended audiobook narrator recording and contextual sentences before approval. Reject a route that sounds like a language/voice splice.
 
 ## Pass 5 — Improve Hindi pronunciation source, only if needed
 
