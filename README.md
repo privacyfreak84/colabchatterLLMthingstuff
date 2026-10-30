@@ -2,6 +2,12 @@
 
 A document-first, resumable audiobook pipeline centred on **Chatterbox Multilingual V3** and Google Colab. The first stages are CPU-only: reconstruct the PDF's structure, extract the manuscript with page/block provenance, validate it, prepare reversible narration repairs, and assemble a human-reviewed pronunciation inventory before spending GPU time.
 
+## Project documents
+
+- [Current project status](PROJECT_STATUS.md) — updated at the end of every engineering/research pass.
+- [Roadmap](ROADMAP.md) — staged plan, completion gates, and next work.
+- [End-product goal](END_PRODUCT_GOAL.md) — required audiobook qualities and acceptance criteria.
+
 ## Start in Google Colab
 
 [**Open Stage 1: PDF reconnaissance and manuscript approval**](https://colab.research.google.com/github/privacyfreak84/colabchatterLLMthingstuff/blob/main/notebooks/01_pdf_reconnaissance.ipynb)
@@ -39,7 +45,7 @@ The notebook checks out the latest main branch, expands the starter engine archi
 
 The repair helper never overwrites the source PDF, extracted manuscript, original main/Notes tracks, or section files. It applies high-heuristic cross-page joins only to separate proposed copies, and only when the exact adjacent block pair appears uniquely in the source track. All same-page candidates remain review-only. The approval helper copies the proposed tracks into separate approved files only after validating the complete review bundle; it records accepted candidate IDs and excluded same-page items. Pronunciation auditions use source spellings and exact source-context sentences, with spoken forms left blank until listening and approval. Stage 2 first generates one English and one Hindi smoke-test clip, then stops by default. The user must listen and set `RUN_FULL_AUDITIONS = True` to opt into the 36 pronunciation samples. It compares source English spelling, IAST transliteration, and Devanagari Hindi through Chatterbox Multilingual V3. It installs a pinned upstream Git commit rather than the stale PyPI 0.1.7 wheel, verifies that the V3 selector is present and the legacy alignment analyser is absent, preflights tokenizer unknowns and checkpoint files, stores the selected model files as ordinary Drive files rather than in the global Hugging Face cache, runs an English/Hindi smoke test first, and checkpoints every generated sample with its seed and hash. No `model.generate` monkey-patching or `torch.load(weights_only=False)` workaround is used.
 
-The optional English-refinement probe in Stage 2 tests provisional English phonetic respellings and Devanagari pronunciation using the English reference voice. It is opt-in, checkpointed, and does not approve any pronunciation automatically.
+The optional English-refinement probe in Stage 2 tested provisional English phonetic respellings and Devanagari pronunciation using an English reference voice. The user rejected those English outputs for poor pronunciation, slow delivery, and artifacts; preserve the bundle as evidence, but do not keep tuning that same route. The current Stage 2 notebook adds an opt-in Hindi-to-English bridge audition: (1) separate Hindi T3 and English S3Gen conditioning, and (2) Hindi-source speech converted with ChatterboxVC to the English target voice. It creates 24 short clips across four terms, records settings and audio diagnostics, and resumes from hash-verified outputs. The bridge experiment has not yet been run on GPU or approved by listening. It does not edit the manuscript or authorize full-book synthesis.
 
 ## Local use
 
