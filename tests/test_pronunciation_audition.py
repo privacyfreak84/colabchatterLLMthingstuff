@@ -1,4 +1,4 @@
-from pronunciation_audition import build_audition_tasks, preflight_tasks
+from tools.pronunciation_audition import build_audition_tasks, preflight_tasks
 import pytest
 
 TERMS = [
