@@ -1,7 +1,7 @@
 # Project status
 
 **Last updated:** 2026-10-31  
-**Current pass:** Chatterbox Hindi-to-English voice bridge implementation  
+**Current pass:** First Chatterbox Hindi-to-English bridge audition completed  
 **Merged to:** main via PR #9, merge commit 047ac7f40e6e539da13d7b3fcf1d5381ada9b175  
 **Full-book synthesis:** LOCKED
 
@@ -11,7 +11,7 @@ The project is pursuing a complete, high-quality, zero-cost audiobook of the sup
 
 The manuscript approval checkpoint is complete. The original 36 pronunciation auditions succeeded, but the English spelling/IAST variants were not good enough. A subsequent eight-clip English refinement experiment was also rejected after listening because the speech was slow, improperly pronounced, and artifact-ridden.
 
-The current pass implements two more promising Chatterbox-native routes that keep Hindi pronunciation generation separate from English narrator rendering. PR #9 is merged to main. The new experiment has **not** yet been run on a GPU and has **not** been listened to.
+The bridge experiment has now been run successfully on GPU. The user reports that the 24-clip bundle sounds quite nice overall, a major positive signal after rejecting the English-refinement batch. The user has not yet identified a winning route/variant, so no specific approach is approved. PR #9 is merged to main.
 
 ## Verified completed work
 
@@ -45,8 +45,9 @@ The current pass implements two more promising Chatterbox-native routes that kee
 **Merge commit:** 047ac7f40e6e539da13d7b3fcf1d5381ada9b175.  
 **Static notebook check:** passed; the updated notebook parses as valid nbformat 4 JSON and contains a default-OFF experiment gate.  
 **Automated CI:** passed, 32 tests in 0.06 seconds (GitHub Actions run 41135587975).  
-**GPU execution:** not run.  
-**Listening approval:** not run.
+**GPU execution:** complete; 24/24 clips generated, zero failed tasks.  
+**User listening feedback:** overall bundle sounds quite nice; per-variant winner not yet identified.  
+**Pronunciation/voice approval:** pending targeted comparison.
 
 Files added or changed in this pass (now on main):
 
@@ -69,7 +70,7 @@ Four representative terms, six clips per term (24 total):
 5. Hindi source passed through ChatterboxVC to the English target voice.
 6. Pace-oriented Hindi source passed through ChatterboxVC to the English target voice.
 
-The pace-oriented setting is exaggeration=0.7 and cfg_weight=0.3. It is an experiment, not a presumed improvement.
+The pace-oriented setting is exaggeration=0.7 and cfg_weight=0.3. It is not a presumed improvement: manifest durations show that it did not consistently shorten the Hindi-source or hybrid clips and made several longer. Retain it only if the user prefers its perceived delivery.
 
 The English and Hindi target references are the public Chatterbox demo clips already prepared by Stage 2. They are diagnostic references, not the final audiobook narrator. A passing route must later be retested with the actual selected narrator recording.
 
