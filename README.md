@@ -4,7 +4,9 @@ A document-first, resumable audiobook pipeline centred on **Chatterbox Multiling
 
 ## Start in Google Colab
 
-[**Open the PDF reconnaissance and repair-review notebook**](https://colab.research.google.com/github/privacyfreak84/colabchatterLLMthingstuff/blob/main/notebooks/01_pdf_reconnaissance.ipynb)
+[**Open Stage 1: PDF reconnaissance and manuscript approval**](https://colab.research.google.com/github/privacyfreak84/colabchatterLLMthingstuff/blob/main/notebooks/01_pdf_reconnaissance.ipynb)
+
+[**Open Stage 2: Chatterbox V3 pronunciation auditions**](https://colab.research.google.com/github/privacyfreak84/colabchatterLLMthingstuff/blob/main/notebooks/02_pronunciation_auditions.ipynb)
 
 The notebook checks out the latest main branch, expands the starter engine archive into a separate `engine/` directory, and runs extraction against `Buddhist_Yoga_TTS_clean.pdf`. It then runs the lightweight repair-review helper in `tools/`. Results are saved to Google Drive and survive Colab resets.
 
@@ -35,7 +37,7 @@ The notebook checks out the latest main branch, expands the starter engine archi
 | Token-aware chunking and resumable synthesis | Not started |
 | ASR verification and audiobook mastering | Planned |
 
-The repair helper never overwrites the source PDF, extracted manuscript, original main/Notes tracks, or section files. It applies high-heuristic cross-page joins only to separate proposed copies, and only when the exact adjacent block pair appears uniquely in the source track. All same-page candidates remain review-only. The approval helper copies the proposed tracks into separate approved files only after validating the complete review bundle; it records accepted candidate IDs and excluded same-page items. Pronunciation auditions use source spellings and exact source-context sentences, with spoken forms left blank until listening and approval.
+The repair helper never overwrites the source PDF, extracted manuscript, original main/Notes tracks, or section files. It applies high-heuristic cross-page joins only to separate proposed copies, and only when the exact adjacent block pair appears uniquely in the source track. All same-page candidates remain review-only. The approval helper copies the proposed tracks into separate approved files only after validating the complete review bundle; it records accepted candidate IDs and excluded same-page items. Pronunciation auditions use source spellings and exact source-context sentences, with spoken forms left blank until listening and approval. Stage 2 compares source English spelling, IAST transliteration, and Devanagari Hindi through the general Chatterbox Multilingual V3 model; tokenizer unknowns are detected before synthesis, and every generated sample is logged with its seed and hash.
 
 ## Local use
 
@@ -59,4 +61,5 @@ pytest -q
 - Persist every expensive synthesis result and make chunk-level retries reproducible.
 - Keep pronunciation corrections explicit, reviewable, and reversible.
 - No full-book audio synthesis until the user approves the repaired manuscript and pronunciation dictionary.
+- Pronunciation auditions are a limited test run and do not authorize full-book synthesis.
 - Short pronunciation auditions are a separate, reversible review activity; they do not authorize full-book synthesis.
