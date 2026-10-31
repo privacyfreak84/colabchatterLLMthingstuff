@@ -61,7 +61,7 @@ The pace-oriented preset (exaggeration=0.7, cfg_weight=0.3) is an experiment inf
 
 **Outcome so far:** the user judged HYBRID and VC almost identical and both good on the public demo references. The pace preset showed no demonstrated benefit. No route is approved yet.
 
-**Narrator retest (done, 2026-10-31):** four real manuscript sentences with the actual narrator recording, run on CPU. The splices sounded very good to the user; HYBRID and VC remained almost identical, and the user prefers HYBRID overall for slightly better pronunciation and clarity. No route is formally approved yet; that is the remaining Pass 6 decision.
+**Narrator retest (done, 2026-10-31):** four real manuscript sentences with the actual narrator recording, run on CPU. The splices sounded very good to the user; HYBRID and VC remained almost identical, and the user prefers HYBRID overall for slightly better pronunciation and clarity. The user then explicitly approved the narrator voice and the HYBRID route (2026-10-31).
 
 ## Pass 5 — Improve Hindi pronunciation source, only if needed
 
@@ -74,13 +74,13 @@ The pace-oriented preset (exaggeration=0.7, cfg_weight=0.3) is an experiment inf
 
 ## Pass 6 — Final narrator and pronunciation approval
 
-**In progress: narrator retest done for four terms (HYBRID preferred, results very good); waiting on explicit approval of the narrator voice and route, then the spoken-form mapping for the remaining nine terms**
+**In progress: narrator voice and HYBRID route approved by the user on 2026-10-31; spoken-form mapping for the remaining nine terms and a representative narration passage still to do**
 
 - Select the actual audiobook narrator reference recording, preferably a clean, representative 8–10 second speech sample. *(Done: recorded and checked.)*
 - Re-audition only the chosen pronunciation route with that target voice. *(Done for four representative terms; both routes were run, HYBRID preferred.)*
 - Decide each candidate spoken form and record the approved reversible text-to-spoken-form mapping.
 - Verify English/Hindi/converted insertions are consistent across repeated terms.
-- Explicitly approve the voice and a representative narration passage.
+- Explicitly approve the voice and a representative narration passage. *(Voice and HYBRID route approved 2026-10-31; the representative narration passage is still to do.)*
 
 ## Pass 7 — Chunking and resumable full-book synthesis
 
