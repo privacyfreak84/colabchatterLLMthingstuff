@@ -61,7 +61,7 @@ The pace-oriented preset (exaggeration=0.7, cfg_weight=0.3) is an experiment inf
 
 **Outcome so far:** the user judged HYBRID and VC almost identical and both good on the public demo references. The pace preset showed no demonstrated benefit. No route is approved yet.
 
-**Next decision gate:** retest with the intended audiobook narrator recording and contextual sentences. Compare HYBRID and VC again for pronunciation, natural pacing, voice similarity, and artifacts. If they remain equivalent, choose on practical grounds (complexity, speed, resumability). Reject a route that sounds like a language/voice splice.
+**Narrator retest (done, 2026-10-31):** four real manuscript sentences with the actual narrator recording, run on CPU. The splices sounded very good to the user; HYBRID and VC remained almost identical, and the user prefers HYBRID overall for slightly better pronunciation and clarity. No route is formally approved yet; that is the remaining Pass 6 decision.
 
 ## Pass 5 — Improve Hindi pronunciation source, only if needed
 
@@ -74,10 +74,10 @@ The pace-oriented preset (exaggeration=0.7, cfg_weight=0.3) is an experiment inf
 
 ## Pass 6 — Final narrator and pronunciation approval
 
-**In progress: retest tooling built and tested with a stand-in model, runs on GPU or CPU (tools/narrator_reference.py, tools/narrator_retest.py, scripts/run_narrator_retest_local.py, notebook section 12); narrator recording checked; first real run pending**
+**In progress: narrator retest done for four terms (HYBRID preferred, results very good); waiting on explicit approval of the narrator voice and route, then the spoken-form mapping for the remaining nine terms**
 
-- Select the actual audiobook narrator reference recording, preferably a clean, representative 8–10 second speech sample.
-- Re-audition only the chosen pronunciation route with that target voice.
+- Select the actual audiobook narrator reference recording, preferably a clean, representative 8–10 second speech sample. *(Done: recorded and checked.)*
+- Re-audition only the chosen pronunciation route with that target voice. *(Done for four representative terms; both routes were run, HYBRID preferred.)*
 - Decide each candidate spoken form and record the approved reversible text-to-spoken-form mapping.
 - Verify English/Hindi/converted insertions are consistent across repeated terms.
 - Explicitly approve the voice and a representative narration passage.
