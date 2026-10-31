@@ -1,7 +1,7 @@
 # Project status
 
 **Last updated:** 2026-10-31  
-**Current pass:** Narrator-voice retest completed for four terms on CPU; HYBRID preferred; explicit voice/route approval pending  
+**Current pass:** Pass 6: narrator voice and HYBRID route approved by the user (2026-10-31); spoken-form mapping for the remaining nine terms pending  
 **Merged to:** main via PR #9, merge commit 047ac7f40e6e539da13d7b3fcf1d5381ada9b175  
 **Full-book synthesis:** LOCKED
 
@@ -11,7 +11,7 @@ The project is pursuing a complete, high-quality, zero-cost audiobook of the sup
 
 The manuscript approval checkpoint is complete. The original 36 pronunciation auditions succeeded, but the English spelling/IAST variants were not good enough. A subsequent eight-clip English refinement experiment was also rejected after listening because the speech was slow, improperly pronounced, and artifact-ridden.
 
-The bridge experiment has been run successfully on GPU (24/24 clips) and reviewed by listening. The user reports that the HYBRID (Hindi T3 + English S3Gen) and VC (ChatterboxVC) routes sound almost identical and that both sound good, a major positive signal after rejecting the English-refinement batch. The user has not reported a preference between baseline and pace settings, so those remain undecided. These auditions used public demo reference voices. The bridge was then retested with the actual narrator recording on four real manuscript sentences (see the narrator retest results below): the user found the results very good and prefers HYBRID for every term. Nothing is formally approved yet. PR #9 is merged to main.
+The bridge experiment has been run successfully on GPU (24/24 clips) and reviewed by listening. The user reports that the HYBRID (Hindi T3 + English S3Gen) and VC (ChatterboxVC) routes sound almost identical and that both sound good, a major positive signal after rejecting the English-refinement batch. The user has not reported a preference between baseline and pace settings, so those remain undecided. These auditions used public demo reference voices. The bridge was then retested with the actual narrator recording on four real manuscript sentences (see the narrator retest results below): the user found the results very good and prefers HYBRID for every term. The user then explicitly approved the narrator voice and the HYBRID route (see the approval record below). PR #9 is merged to main.
 
 ## Verified completed work
 
@@ -48,7 +48,7 @@ The bridge experiment has been run successfully on GPU (24/24 clips) and reviewe
 **GPU execution:** complete; 24/24 clips generated, zero failed tasks.  
 **Bundle uploaded:** nextrecon4.txt (commit d5cb8ac).  
 **User listening feedback:** HYBRID and VC sound almost identical and both sound good. No baseline-versus-pace preference reported.  
-**Pronunciation/voice approval:** pending. Both routes were acceptable on the demo references; the narrator retest has since been run and reviewed (below), but the user has not yet given an explicit approval.
+**Pronunciation/voice approval:** the user approved the narrator voice and the HYBRID route on 2026-10-31 (see the approval record below). Terms other than the four heard so far are not yet approved.
 
 Files added or changed in this pass (now on main):
 
@@ -132,19 +132,35 @@ Before the real run, the 69 tests passed and the runner's control flow was exerc
 
 - Maitreya and Vijnanavada: everything sounds very good; HYBRID and VC sound almost identical.
 - Overall, across all terms, the user prefers HYBRID: a little better pronunciation and clarity.
-- This is a stated preference, not a formal approval of the voice or route.
+- This was first a stated preference; the user then gave an explicit approval (next section).
+
+## Approval record
+
+On 2026-10-31 the user explicitly approved **the narrator voice** and **the HYBRID route**, after listening to four terms in real manuscript sentences. The approved configuration is exactly what was run:
+
+- Narrator reference: the user's recording (first 10 s, padded to a 40 ms multiple). The file is kept out of this public repository.
+- HYBRID: Hindi T3 conditioned on the public Hindi demo reference (hi_f1) with the narrator's S3Gen conditioning, bare Devanagari term text with no carrier sentence.
+- English parts rendered in the narrator voice; generation parameters exaggeration 0.5, cfg_weight 0.5, temperature 0.7, repetition_penalty 1.2, min_p 0.05, top_p 0.95.
+- Join: edges trimmed below -45 dB with a 30 ms margin, 10 ms edge fades, 60 ms pause (180 ms when a comma follows the term).
+
+Scope: this approves the voice and route. It does not approve the spoken form of the nine terms not yet heard with the narrator, and it does not authorize full-book synthesis.
 
 ## Immediate next action
 
-**Single next action:** the user decides, explicitly, whether to approve (a) the narrator reference voice and (b) HYBRID as the pronunciation route for the book, or says what is still missing.
+**Single next action:** hear the remaining nine inventory terms (Avatamsaka, Buddha, Gautama, Sandhinirmochana-sutra, Subhuti, Yogachara, nirvana, samsara, sutra) in real manuscript sentences with the approved narrator and HYBRID route only, and record the user's approved spoken form for each.
 
-If approved, the remainder of Pass 6 is:
+Then the rest of Pass 6:
 
-1. Record the reversible text-to-spoken-form mapping for all 13 inventory terms. Four (Avalokiteshvara, Maitreya, Manjushri, Vijnanavada) have now been heard with the narrator; the other nine (Avatamsaka, Buddha, Gautama, Sandhinirmochana-sutra, Subhuti, Yogachara, nirvana, samsara, sutra) have only been heard on the demo references.
+1. Record the reversible text-to-spoken-form mapping for all 13 inventory terms.
 2. Check that repeated terms stay consistent across the book.
 3. Record an explicitly approved representative narration passage.
 
-Pass 7 stays locked, and full-book synthesis stays locked, until those approvals are given.
+Pass 7 and full-book synthesis stay locked until those are approved.
+
+## Notes for later passes
+
+- Chatterbox caps a single generation at 1000 speech tokens (about 40 s of audio). The cap is hardcoded inside `generate()` and hitting it silently cuts the audio off mid-word. The longest clip so far is 23.5 s. Pass 7 chunking should keep chunks well under the cap and flag any clip that reaches it.
+- Add a peak limiter to the final assembly; single-sample overshoots (1-4% above full scale before 16-bit conversion) were seen in two clips.
 
 ## Decision policy
 
