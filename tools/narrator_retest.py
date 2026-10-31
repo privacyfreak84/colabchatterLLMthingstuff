@@ -15,9 +15,12 @@ run yet. Nothing here edits the manuscript or authorizes full-book synthesis.
 """
 from __future__ import annotations
 
+import base64
 import json
 import re
+import time
 import traceback
+import zipfile
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -74,6 +77,80 @@ DEFAULT_ASSEMBLY = {
 }
 
 
+# Same generation settings the notebook uses for its smoke test and bridge audition.
+DEFAULT_GENERATION_PARAMETERS: dict[str, float] = {
+    "exaggeration": 0.5,
+    "cfg_weight": 0.5,
+    "temperature": 0.7,
+    "repetition_penalty": 1.2,
+    "min_p": 0.05,
+    "top_p": 0.95,
+}
+
+# Shortest first: a sensible order for a slow CPU smoke test.
+CPU_SMOKE_TERMS = ("Maitreya", "Vijnanavada")
+
+
+def select_terms(names: Any = None) -> dict[str, dict[str, str]]:
+    """Return a subset of DEFAULT_TERMS by name (all terms when `names` is empty)."""
+    if not names:
+        return {k: dict(v) for k, v in DEFAULT_TERMS.items()}
+    chosen: dict[str, dict[str, str]] = {}
+    unknown = [n for n in names if n not in DEFAULT_TERMS]
+    if unknown:
+        raise ValueError(f"Unknown term(s) {unknown}. Valid terms: {sorted(DEFAULT_TERMS)}")
+    for name in names:
+        chosen[name] = dict(DEFAULT_TERMS[name])
+    return chosen
+
+
+def make_aligned_reference(source_path: str | Path, output_path: str | Path) -> float:
+    """Prepare a reference clip the way the notebook's demo references are prepared.
+
+    Mono, 24 kHz, first 10 s only, padded with silence to a multiple of 40 ms
+    (960 samples) to avoid the mel/token frame-count mismatch warning.
+    Returns the final duration in seconds.
+    """
+    import numpy as np
+    import soundfile as sf
+
+    audio, rate = sf.read(str(source_path), dtype="float32", always_2d=False)
+    if audio.ndim == 2:
+        audio = audio.mean(axis=1)
+    if audio.ndim != 1 or audio.size == 0 or not np.isfinite(audio).all():
+        raise ValueError(f"Invalid reference audio: {source_path}")
+    if rate != SAMPLE_RATE:
+        import librosa  # only needed when the source is not already 24 kHz
+
+        audio = librosa.resample(audio, orig_sr=rate, target_sr=SAMPLE_RATE)
+    audio = audio[: SAMPLE_RATE * 10]
+    if audio.size < SAMPLE_RATE:
+        raise ValueError(f"Reference clip is shorter than one second: {source_path}")
+    pad = (-audio.size) % 960
+    if pad:
+        audio = np.pad(audio, (0, pad))
+    sf.write(str(output_path), audio, SAMPLE_RATE, subtype="PCM_16")
+    return audio.size / SAMPLE_RATE
+
+
+def make_transfer_bundle(output_dir: str | Path, zip_path: str | Path, text_path: str | Path) -> dict[str, Any]:
+    """Zip the manifest and WAVs, then base64 the zip into a text file for upload to the repo."""
+    out = Path(output_dir)
+    manifest = out / "narrator_retest_manifest.json"
+    if not manifest.is_file():
+        raise FileNotFoundError(f"No narrator retest manifest in {out}.")
+    wavs = sorted(out.glob("N*.wav"))
+    if not wavs:
+        raise FileNotFoundError(f"No retest WAVs in {out}.")
+    zip_path, text_path = Path(zip_path), Path(text_path)
+    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.write(manifest, manifest.name)
+        for wav in wavs:
+            archive.write(wav, wav.name)
+    text_path.write_text(base64.b64encode(zip_path.read_bytes()).decode("ascii") + "\n", encoding="ascii")
+    return {"zip": str(zip_path), "text": str(text_path), "wav_count": len(wavs)}
+
+
 def split_context_sentence(sentence: str, term: str) -> tuple[str, str, str]:
     """Split a sentence around exactly one whole-word occurrence of `term`.
 
@@ -104,7 +181,12 @@ def build_narrator_task_specs(
     term_text_template: str = "{devanagari}",
     assembly: Mapping[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
-    """Build the deterministic retest matrix: seven tasks per term (five clips, two splices)."""
+    """Build the deterministic retest matrix: seven tasks per term (five clips, two splices).
+
+    Task IDs and seeds depend on the term, not its position in `terms`, so a
+    partial run (for example two terms on a slow CPU) can be extended later
+    without renumbering or overwriting finished clips.
+    """
     if not terms:
         raise ValueError("At least one term is required.")
     if not base_generation_parameters:
@@ -113,8 +195,15 @@ def build_narrator_task_specs(
     params = dict(base_generation_parameters)
     specs: list[dict[str, Any]] = []
 
-    for index, (term, info) in enumerate(terms.items(), start=1):
+    numbering = {name: number for number, name in enumerate(DEFAULT_TERMS, start=1)}
+    next_custom = len(DEFAULT_TERMS) + 1
+    for term, info in terms.items():
         term = str(term).strip()
+        if term in numbering:
+            index = numbering[term]
+        else:  # custom term: numbered after the defaults, in the order given
+            index = numbering[term] = next_custom
+            next_custom += 1
         devanagari = str(info.get("devanagari", "")).strip()
         sentence = str(info.get("sentence", "")).strip()
         if not term or not devanagari or not sentence:
@@ -241,7 +330,8 @@ def run_narrator_retest(
     English parts use the narrator for both T3 and S3Gen. Hindi source clips use
     the Hindi reference for both. HYBRID uses Hindi T3 with narrator S3Gen. VC
     converts the Hindi source clip to the narrator voice. The model's original
-    conditionals are restored before returning. Not yet run on a GPU.
+    conditionals are restored before returning. Runs on whatever device the model
+    was loaded on; CPU works but is slow. Not yet run with the real model.
     """
     import numpy as np
     import soundfile as sf
@@ -258,8 +348,6 @@ def run_narrator_retest(
     check = validate_narrator_reference(narrator_ref)
     if not check["ok"]:
         raise ValueError("Narrator reference has blocking problems: " + "; ".join(check["problems"]))
-    if not torch.cuda.is_available():
-        raise RuntimeError("A CUDA GPU is required for the narrator retest.")
     if int(model.sr) != SAMPLE_RATE:
         raise RuntimeError(f"Expected the Chatterbox V3 24 kHz output rate, received {model.sr}.")
 
@@ -277,7 +365,6 @@ def run_narrator_retest(
         "chatterbox_source_commit": str(code_revision),
         "narrator_reference": {"file": narrator_ref.name, "sha256": _sha256(narrator_ref)},
         "hindi_reference": {"file": hindi_ref.name, "sha256": _sha256(hindi_ref)},
-        "terms": {name: dict(info) for name, info in terms.items()},
         "term_text_template": term_text_template,
         "base_generation_parameters": dict(base_generation_parameters),
         "assembly": settings,
@@ -289,18 +376,32 @@ def run_narrator_retest(
         previous = json.loads(manifest_path.read_text(encoding="utf-8"))
         if previous.get("identity") != identity:
             raise RuntimeError(
-                "This output folder belongs to a different narrator/model/terms/settings combination. "
+                "This output folder belongs to a different narrator/model/settings combination. "
                 "Preserve it and choose a fresh output folder."
             )
         old_by_id = {t["task_id"]: t for t in previous.get("tasks", []) if t.get("task_id")}
+    spec_ids = {spec["task_id"] for spec in specs}
+    comparable = ("term", "kind", "mode", "language_id", "text", "generation_parameters",
+                  "source_task_id", "parts", "seed")
+    for spec in specs:
+        prior = old_by_id.get(spec["task_id"])
+        if prior and any(prior.get(key) != spec.get(key) for key in comparable):
+            raise RuntimeError(
+                f"Task {spec['task_id']} differs from the one already in this folder (different text, "
+                "settings or seed). Preserve the old evidence and choose a fresh output folder."
+            )
 
+    device = str(getattr(model, "device", "unknown"))
     manifest: dict[str, Any] = {
         "identity": identity,
+        "runtime": {"device": device, "torch": str(torch.__version__)},
         "narrator_reference_check": check,
         "tasks": [],
         "full_book_synthesis_authorized": False,
     }
-    tasks_by_id: dict[str, dict[str, Any]] = {}
+    tasks_by_id: dict[str, dict[str, Any]] = {
+        task_id: record for task_id, record in old_by_id.items() if task_id not in spec_ids
+    }
     paths_by_id: dict[str, Path] = {}
 
     def save_manifest() -> None:
@@ -350,6 +451,7 @@ def run_narrator_retest(
         tasks_by_id[task_id] = record
         save_manifest()
         _set_seed(int(spec["seed"]))
+        started = time.perf_counter()
         try:
             if spec["kind"] == "tts":
                 if spec["mode"] == "english_narrator":
@@ -398,9 +500,10 @@ def run_narrator_retest(
             record["output_file"] = filename
             record["sha256"] = _sha256(wav_path)
             record["status"] = "generated"
+            record["generation_seconds"] = round(time.perf_counter() - started, 2)
             paths_by_id[task_id] = wav_path
             save_manifest()
-            print(f"{task_id}: {metrics['duration_seconds']} s")
+            print(f"{task_id}: {metrics['duration_seconds']} s of audio in {record['generation_seconds']} s ({device})")
         except BaseException as exc:
             record["status"] = "interrupted" if isinstance(exc, KeyboardInterrupt) else "generation_failed"
             record["error"] = f"{type(exc).__name__}: {exc}"
@@ -415,7 +518,7 @@ def run_narrator_retest(
         model.conds.t3, model.conds.gen = hindi_t3, hindi_gen
 
     save_manifest()
-    items = list(tasks_by_id.values())
+    items = [record for task_id, record in tasks_by_id.items() if task_id in spec_ids]
     return {
         "manifest_path": str(manifest_path),
         "output_dir": str(out),
@@ -424,5 +527,6 @@ def run_narrator_retest(
         "failed_count": sum(1 for t in items if t.get("status") == "generation_failed"),
         "tasks": items,
         "narrator_reference_check": check,
+        "runtime": manifest["runtime"],
         "full_book_synthesis_authorized": False,
     }

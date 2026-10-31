@@ -1,7 +1,7 @@
 # Project status
 
 **Last updated:** 2026-10-31  
-**Current pass:** Narrator-voice retest tooling built; waiting on the narrator recording  
+**Current pass:** Narrator-voice retest tooling built with CPU support; narrator recording checked; first real run pending  
 **Merged to:** main via PR #9, merge commit 047ac7f40e6e539da13d7b3fcf1d5381ada9b175  
 **Full-book synthesis:** LOCKED
 
@@ -102,22 +102,23 @@ Checked on 2026-10-31 by decoding nextrecon4.txt (base64 zip) and reading its ma
 - The pace preset (exaggeration=0.7, cfg_weight=0.3) was not reported as better or worse; it did not consistently shorten clips, so it has no demonstrated benefit yet.
 - No per-term winner was identified, and none is needed yet: the routes are interchangeable on the demo voices.
 
-## Narrator retest tooling (built, not yet run on GPU)
+## Narrator retest tooling (built, CPU-capable, not yet run with the real model)
 
 Files added in this pass:
 
 - tools/narrator_reference.py: stdlib-only checker for a candidate narrator WAV (length, sample rate, clipping, noise floor, silence in the first 10 s that Chatterbox actually uses). It reports blocking problems and warnings; it cannot judge whether the voice suits the book.
 - tools/narrator_retest.py: for four terms, splits a real manuscript sentence at the term, renders the English before/after in the narrator voice, renders the term through both bridge routes (HYBRID and VC), and splices each route between the English parts. 28 tasks per run (20 generated clips, 8 CPU splices), resumable and hash-verified, with the join settings recorded in the manifest.
-- tests/test_narrator_reference.py and tests/test_narrator_retest.py: CPU-only tests. The full suite is now 59 tests and CI installs numpy for them.
-- notebooks/02_pronunciation_auditions.ipynb: new section 12 with a checker cell and a gated (default OFF) retest cell. After listening, the bundle is uploaded as nextrecon5.txt.
+- tests/test_narrator_reference.py, tests/test_narrator_retest.py and tests/test_narrator_retest_runner.py: CPU-only tests, including a stand-in-model run of the whole retest flow. The full suite is now 69 tests and CI installs numpy and soundfile for them.
+- notebooks/02_pronunciation_auditions.ipynb: section 12 with a checker cell and a gated (default OFF) retest cell. The model-loading cell no longer requires a GPU and falls back to CPU. After listening, the bundle is uploaded as nextrecon5.txt.
+- scripts/run_narrator_retest_local.py and docs/local_cpu_setup.md: run the same retest outside Colab on a CPU-only machine (written for a Fedora laptop with 16 GB RAM and no usable GPU). On CPU it runs the two shortest terms by default; runs are resumable and can be extended term by term. The manifest records seconds per clip.
 
-What was verified: the 59 tests pass locally, and the GPU runner's control flow (conditioning per task, resume, identity guard, blocking-recording guard) was exercised end-to-end with a stubbed model. What was not verified: any real Chatterbox generation. Open assumptions the first GPU run will test: that a bare Devanagari term (no carrier sentence) renders cleanly, and that the 60 ms join pause (180 ms before a comma) sounds natural. The pace preset is dropped from this retest because it showed no benefit.
+What was verified: the 69 tests pass locally, the runner's control flow (conditioning per task, resume, partial runs, guards) is exercised end-to-end with a stand-in model, the recording checker works on a bare Python, and the pinned dependency set resolves together. What was not verified: any real Chatterbox generation on CPU or GPU, and how slow CPU generation is. Open assumptions the first GPU run will test: that a bare Devanagari term (no carrier sentence) renders cleanly, and that the 60 ms join pause (180 ms before a comma) sounds natural. The pace preset is dropped from this retest because it showed no benefit.
 
 ## Immediate next action
 
-1. Record the narrator reference: a clean 8-10 s WAV in a quiet room, representative of the delivery wanted for the whole book. Save it as narrator_reference.wav in the references folder on Drive.
-2. Run the Step 1 checker cell in section 12 and fix any blocking problems.
-3. Enable RUN_NARRATOR_RETEST in the Step 2 cell, listen to the eight splices (two per term), and upload the bundle as nextrecon5.txt.
+1. The narrator reference has been recorded (about 19.6 s, 24 kHz mono WAV) and passes the checker with no blocking problems. Only its first 10 s is used by Chatterbox.
+2. Run the retest, either in the Colab notebook (section 12) or locally with scripts/run_narrator_retest_local.py (see docs/local_cpu_setup.md). On CPU start with the two default terms; the first run also measures CPU speed.
+3. Listen to the splices (two per term) and upload the bundle as nextrecon5.txt.
 4. Update this file with the counts, the verified hashes, and your listening decision. Keep full-book synthesis locked until the voice and pronunciation decisions are explicitly approved.
 
 ## Decision policy

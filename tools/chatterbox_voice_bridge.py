@@ -172,8 +172,7 @@ def run_hindi_english_bridge_auditions(
     out = Path(output_dir)
     if not en_ref.is_file() or not hi_ref.is_file():
         raise FileNotFoundError("Both English and Hindi reference WAVs must exist.")
-    if not torch.cuda.is_available():
-        raise RuntimeError("A CUDA GPU is required for this controlled Chatterbox bridge audition.")
+    # The model carries its own device (CUDA or CPU); CPU runs are valid but slow.
     if int(model.sr) != 24000:
         raise RuntimeError(f"Expected the Chatterbox V3 24 kHz output rate, received {model.sr}.")
 

@@ -155,3 +155,37 @@ def test_assemble_splice_needs_exactly_three_parts():
         assemble_splice(
             [_tone(0.2)] * 2, SR, gap_ms=60, edge_fade_ms=10, trim_threshold_db=-45.0, trim_keep_ms=30
         )
+
+
+# ---- partial runs, term selection ----
+
+from tools.narrator_retest import CPU_SMOKE_TERMS, select_terms
+
+
+def test_select_terms_defaults_subsets_and_unknown_names():
+    assert list(select_terms(None)) == list(DEFAULT_TERMS)
+    assert list(select_terms(CPU_SMOKE_TERMS)) == ["Maitreya", "Vijnanavada"]
+    with pytest.raises(ValueError, match="Unknown term"):
+        select_terms(["Maitreya", "Nope"])
+
+
+def test_select_terms_returns_copies():
+    chosen = select_terms(["Maitreya"])
+    chosen["Maitreya"]["sentence"] = "changed"
+    assert DEFAULT_TERMS["Maitreya"]["sentence"] != "changed"
+
+
+def test_task_ids_follow_the_term_not_its_position_in_a_subset():
+    subset = build_narrator_task_specs(select_terms(CPU_SMOKE_TERMS), BASE)
+    ids = [s["task_id"] for s in subset]
+    assert len(ids) == 14
+    assert {i[:4] for i in ids} == {"N002", "N004"}
+    full = {s["task_id"]: s for s in build_narrator_task_specs(DEFAULT_TERMS, BASE)}
+    for spec in subset:  # identical specs (text, seed, parts) whichever subset they come from
+        assert full[spec["task_id"]] == spec
+
+
+def test_custom_terms_are_numbered_after_the_defaults():
+    custom = {"Zzterm": {"devanagari": "ज़", "sentence": "Then Zzterm spoke clearly today."}}
+    ids = [s["task_id"] for s in build_narrator_task_specs(custom, BASE)]
+    assert ids[0] == "N005_EN_PREFIX"

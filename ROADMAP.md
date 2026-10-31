@@ -74,7 +74,7 @@ The pace-oriented preset (exaggeration=0.7, cfg_weight=0.3) is an experiment inf
 
 ## Pass 6 — Final narrator and pronunciation approval
 
-**In progress: retest tooling built and CPU-tested (tools/narrator_reference.py, tools/narrator_retest.py, notebook section 12); waiting on the narrator recording; GPU run not yet done**
+**In progress: retest tooling built and tested with a stand-in model, runs on GPU or CPU (tools/narrator_reference.py, tools/narrator_retest.py, scripts/run_narrator_retest_local.py, notebook section 12); narrator recording checked; first real run pending**
 
 - Select the actual audiobook narrator reference recording, preferably a clean, representative 8–10 second speech sample.
 - Re-audition only the chosen pronunciation route with that target voice.
