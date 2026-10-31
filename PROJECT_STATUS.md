@@ -1,7 +1,7 @@
 # Project status
 
 **Last updated:** 2026-10-31  
-**Current pass:** Narrator-voice retest tooling built with CPU support; narrator recording checked; first real run pending  
+**Current pass:** Narrator-voice retest completed for four terms on CPU; HYBRID preferred; explicit voice/route approval pending  
 **Merged to:** main via PR #9, merge commit 047ac7f40e6e539da13d7b3fcf1d5381ada9b175  
 **Full-book synthesis:** LOCKED
 
@@ -11,7 +11,7 @@ The project is pursuing a complete, high-quality, zero-cost audiobook of the sup
 
 The manuscript approval checkpoint is complete. The original 36 pronunciation auditions succeeded, but the English spelling/IAST variants were not good enough. A subsequent eight-clip English refinement experiment was also rejected after listening because the speech was slow, improperly pronounced, and artifact-ridden.
 
-The bridge experiment has been run successfully on GPU (24/24 clips) and reviewed by listening. The user reports that the HYBRID (Hindi T3 + English S3Gen) and VC (ChatterboxVC) routes sound almost identical and that both sound good, a major positive signal after rejecting the English-refinement batch. The user has not reported a preference between baseline and pace settings, so those remain undecided. Because these auditions used public demo reference voices, nothing is approved yet: the next step is to retest the bridge with the actual narrator recording. PR #9 is merged to main.
+The bridge experiment has been run successfully on GPU (24/24 clips) and reviewed by listening. The user reports that the HYBRID (Hindi T3 + English S3Gen) and VC (ChatterboxVC) routes sound almost identical and that both sound good, a major positive signal after rejecting the English-refinement batch. The user has not reported a preference between baseline and pace settings, so those remain undecided. These auditions used public demo reference voices. The bridge was then retested with the actual narrator recording on four real manuscript sentences (see the narrator retest results below): the user found the results very good and prefers HYBRID for every term. Nothing is formally approved yet. PR #9 is merged to main.
 
 ## Verified completed work
 
@@ -48,7 +48,7 @@ The bridge experiment has been run successfully on GPU (24/24 clips) and reviewe
 **GPU execution:** complete; 24/24 clips generated, zero failed tasks.  
 **Bundle uploaded:** nextrecon4.txt (commit d5cb8ac).  
 **User listening feedback:** HYBRID and VC sound almost identical and both sound good. No baseline-versus-pace preference reported.  
-**Pronunciation/voice approval:** pending. Both routes are acceptable on the demo references; approval needs a retest with the actual narrator recording.
+**Pronunciation/voice approval:** pending. Both routes were acceptable on the demo references; the narrator retest has since been run and reviewed (below), but the user has not yet given an explicit approval.
 
 Files added or changed in this pass (now on main):
 
@@ -102,7 +102,7 @@ Checked on 2026-10-31 by decoding nextrecon4.txt (base64 zip) and reading its ma
 - The pace preset (exaggeration=0.7, cfg_weight=0.3) was not reported as better or worse; it did not consistently shorten clips, so it has no demonstrated benefit yet.
 - No per-term winner was identified, and none is needed yet: the routes are interchangeable on the demo voices.
 
-## Narrator retest tooling (built, CPU-capable, not yet run with the real model)
+## Narrator retest tooling (built and run)
 
 Files added in this pass:
 
@@ -112,14 +112,39 @@ Files added in this pass:
 - notebooks/02_pronunciation_auditions.ipynb: section 12 with a checker cell and a gated (default OFF) retest cell. The model-loading cell no longer requires a GPU and falls back to CPU. After listening, the bundle is uploaded as nextrecon5.txt.
 - scripts/run_narrator_retest_local.py and docs/local_cpu_setup.md: run the same retest outside Colab on a CPU-only machine (written for a Fedora laptop with 16 GB RAM and no usable GPU). On CPU it runs the two shortest terms by default; runs are resumable and can be extended term by term. The manifest records seconds per clip.
 
-What was verified: the 69 tests pass locally, the runner's control flow (conditioning per task, resume, partial runs, guards) is exercised end-to-end with a stand-in model, the recording checker works on a bare Python, and the pinned dependency set resolves together. What was not verified: any real Chatterbox generation on CPU or GPU, and how slow CPU generation is. Open assumptions the first GPU run will test: that a bare Devanagari term (no carrier sentence) renders cleanly, and that the 60 ms join pause (180 ms before a comma) sounds natural. The pace preset is dropped from this retest because it showed no benefit.
+Before the real run, the 69 tests passed and the runner's control flow was exercised with a stand-in model; the pinned dependency set resolves together and the recording checker runs on a bare Python. The real run then confirmed the two open assumptions in the user's listening: a bare Devanagari term (no carrier sentence) renders cleanly, and the join pauses (60 ms, or 180 ms before a comma) sound natural. The pace preset was dropped from this retest because it showed no benefit.
+
+## Narrator retest results
+
+**Narrator reference:** about 19.6 s, 24 kHz mono WAV, passes the checker with no blocking problems (speech about 50 dB above the noise floor, no clipping). Its silences are digital zeros, so some noise gating or suppression was applied upstream. The file is deliberately not in this public repository. Chatterbox uses roughly the first 10 s.
+
+**Execution:** on the user's laptop (Fedora, Ryzen 5 5625U, 16 GB RAM, CPU only, Python 3.11, torch 2.6.0+cpu) with scripts/run_narrator_retest_local.py. Four real manuscript sentences, the term split out and rendered through both routes, each route spliced between English parts rendered in the narrator voice.
+
+- Run 1, nextrecon5.txt: Maitreya (N002) and Vijnanavada (N004), 14/14 tasks, 227 s of generation.
+- Run 2, nextrecon6.txt: added Manjushri (N003) and Avalokiteshvara (N001), 28/28 tasks in the manifest, 308 s of new generation. The Avalokiteshvara suffix is 23.5 s of audio generated in 150 s, under the 40 s token cap, so it was not truncated.
+- CPU speed: about 7 s of generation per second of audio on long clips, about 10-20 s fixed cost per short clip. A full four-term run is roughly 9 minutes of generation.
+
+**Verification of the bundles (2026-10-31):** all 28 SHA-256 hashes match the manifests, manifest durations match the WAVs, all clips are 24 kHz with status generated, the run 1 clips are byte-identical in run 2, and `full_book_synthesis_authorized` is False. Six clips (N003_EN_PREFIX, N001_EN_SUFFIX and the four splices containing them) have exactly one full-scale sample each: the model's raw output overshot by about 1-4% before 16-bit conversion. That is inaudible, but a peak limiter belongs in the full-book assembly step.
+
+**Objective hints (first two terms only, crude, not a quality judgement):** the bridged term sat within about 2 dB of the surrounding English in level. Pitch medians were 206-222 Hz for the English parts against 220 Hz for the narrator reference, 187-193 Hz for HYBRID terms and 197/212 Hz for VC. Maitreya VC scored well below the other clips on a rough spectral comparison with the narrator, consistent with the user's preference for HYBRID, but the measure is crude and the clips are about a second long.
+
+**User listening result:**
+
+- Maitreya and Vijnanavada: everything sounds very good; HYBRID and VC sound almost identical.
+- Overall, across all terms, the user prefers HYBRID: a little better pronunciation and clarity.
+- This is a stated preference, not a formal approval of the voice or route.
 
 ## Immediate next action
 
-1. The narrator reference has been recorded (about 19.6 s, 24 kHz mono WAV) and passes the checker with no blocking problems. Only its first 10 s is used by Chatterbox.
-2. Run the retest, either in the Colab notebook (section 12) or locally with scripts/run_narrator_retest_local.py (see docs/local_cpu_setup.md). On CPU start with the two default terms; the first run also measures CPU speed.
-3. Listen to the splices (two per term) and upload the bundle as nextrecon5.txt.
-4. Update this file with the counts, the verified hashes, and your listening decision. Keep full-book synthesis locked until the voice and pronunciation decisions are explicitly approved.
+**Single next action:** the user decides, explicitly, whether to approve (a) the narrator reference voice and (b) HYBRID as the pronunciation route for the book, or says what is still missing.
+
+If approved, the remainder of Pass 6 is:
+
+1. Record the reversible text-to-spoken-form mapping for all 13 inventory terms. Four (Avalokiteshvara, Maitreya, Manjushri, Vijnanavada) have now been heard with the narrator; the other nine (Avatamsaka, Buddha, Gautama, Sandhinirmochana-sutra, Subhuti, Yogachara, nirvana, samsara, sutra) have only been heard on the demo references.
+2. Check that repeated terms stay consistent across the book.
+3. Record an explicitly approved representative narration passage.
+
+Pass 7 stays locked, and full-book synthesis stays locked, until those approvals are given.
 
 ## Decision policy
 
