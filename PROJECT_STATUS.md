@@ -1,7 +1,7 @@
 # Project status
 
 **Last updated:** 2026-10-31  
-**Current pass:** Hindi-to-English bridge audition completed and reviewed; narrator retest is next  
+**Current pass:** Narrator-voice retest tooling built; waiting on the narrator recording  
 **Merged to:** main via PR #9, merge commit 047ac7f40e6e539da13d7b3fcf1d5381ada9b175  
 **Full-book synthesis:** LOCKED
 
@@ -94,7 +94,7 @@ Checked on 2026-10-31 by decoding nextrecon4.txt (base64 zip) and reading its ma
 - No clipping in any clip; sample rate 24 kHz.
 - `full_book_synthesis_authorized` is `False`.
 - This verifies file integrity only. Audio quality is judged by listening, not by these checks.
-- The repo test suite (32 tests) passes locally on main at da2d9d2.
+- The repo test suite passed locally on main at da2d9d2 (32 tests before the narrator-retest tooling was added).
 
 ## Listening result
 
@@ -102,9 +102,23 @@ Checked on 2026-10-31 by decoding nextrecon4.txt (base64 zip) and reading its ma
 - The pace preset (exaggeration=0.7, cfg_weight=0.3) was not reported as better or worse; it did not consistently shorten clips, so it has no demonstrated benefit yet.
 - No per-term winner was identified, and none is needed yet: the routes are interchangeable on the demo voices.
 
+## Narrator retest tooling (built, not yet run on GPU)
+
+Files added in this pass:
+
+- tools/narrator_reference.py: stdlib-only checker for a candidate narrator WAV (length, sample rate, clipping, noise floor, silence in the first 10 s that Chatterbox actually uses). It reports blocking problems and warnings; it cannot judge whether the voice suits the book.
+- tools/narrator_retest.py: for four terms, splits a real manuscript sentence at the term, renders the English before/after in the narrator voice, renders the term through both bridge routes (HYBRID and VC), and splices each route between the English parts. 28 tasks per run (20 generated clips, 8 CPU splices), resumable and hash-verified, with the join settings recorded in the manifest.
+- tests/test_narrator_reference.py and tests/test_narrator_retest.py: CPU-only tests. The full suite is now 59 tests and CI installs numpy for them.
+- notebooks/02_pronunciation_auditions.ipynb: new section 12 with a checker cell and a gated (default OFF) retest cell. After listening, the bundle is uploaded as nextrecon5.txt.
+
+What was verified: the 59 tests pass locally, and the GPU runner's control flow (conditioning per task, resume, identity guard, blocking-recording guard) was exercised end-to-end with a stubbed model. What was not verified: any real Chatterbox generation. Open assumptions the first GPU run will test: that a bare Devanagari term (no carrier sentence) renders cleanly, and that the 60 ms join pause (180 ms before a comma) sounds natural. The pace preset is dropped from this retest because it showed no benefit.
+
 ## Immediate next action
 
-Choose the narrator reference recording (clean, representative, about 8-10 seconds of speech) and add it to the Stage 2 workflow. Then rerun the bridge for the four representative terms, in sentence context, with that narrator as the English target voice. Compare HYBRID and VC again and listen for voice consistency, Hindi-origin pronunciation, pacing, and artifacts. If they still sound equivalent, the route can be chosen on practical grounds (complexity, speed, resumability). Record the outcome here and keep full-book synthesis locked until the voice and pronunciation decisions are explicitly approved.
+1. Record the narrator reference: a clean 8-10 s WAV in a quiet room, representative of the delivery wanted for the whole book. Save it as narrator_reference.wav in the references folder on Drive.
+2. Run the Step 1 checker cell in section 12 and fix any blocking problems.
+3. Enable RUN_NARRATOR_RETEST in the Step 2 cell, listen to the eight splices (two per term), and upload the bundle as nextrecon5.txt.
+4. Update this file with the counts, the verified hashes, and your listening decision. Keep full-book synthesis locked until the voice and pronunciation decisions are explicitly approved.
 
 ## Decision policy
 

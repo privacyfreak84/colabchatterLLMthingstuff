@@ -40,6 +40,7 @@ The notebook checks out the latest main branch, expands the starter engine archi
 | Approved manuscript tracks and pronunciation audition prompts | Implemented; approval is scoped to 48 applied cross-page joins, with same-page candidate excluded |
 | Pronunciation candidate inventory | First-pass heuristic plus curated draft; human approval required |
 | Chatterbox V3 adapter | Initial adapter; validated on GPU through the 36-clip baseline audition, the 8-clip English probe, and the 24-clip Hindi-English bridge audition. Narrator-voice validation pending |
+| Narrator-voice retest (reference checker, sentence-splice test) | Tooling built and CPU-tested; first GPU run waits on the narrator recording |
 | Token-aware chunking and resumable synthesis | Not started |
 | ASR verification and audiobook mastering | Planned |
 
