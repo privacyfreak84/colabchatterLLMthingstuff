@@ -40,7 +40,7 @@ The notebook checks out the latest main branch, expands the starter engine archi
 | Approved manuscript tracks and pronunciation audition prompts | Implemented; approval is scoped to 48 applied cross-page joins, with same-page candidate excluded |
 | Pronunciation candidate inventory | First-pass heuristic plus curated draft; human approval required |
 | Chatterbox V3 adapter | Initial adapter; validated on GPU through the 36-clip baseline audition, the 8-clip English probe, and the 24-clip Hindi-English bridge audition. Validated with the approved narrator voice on four terms (CPU) |
-| Narrator-voice retest (reference checker, sentence-splice test) | Tooling built; runs on GPU or CPU (Colab notebook or `scripts/run_narrator_retest_local.py`, see `docs/local_cpu_setup.md`); run on the real model for four terms; narrator voice and HYBRID route approved by the user; remaining nine terms pending |
+| Narrator-voice retest (reference checker, sentence-splice test) | Tooling built; runs on GPU or CPU (Colab notebook or `scripts/run_narrator_retest_local.py`, see `docs/local_cpu_setup.md`); run on the real model for all 13 terms; narrator voice and HYBRID route approved; Buddha stays English; aligned splicing (tools/aligned_splice.py) built to fix join pauses and pitch/pace, accent drift under investigation |
 | Token-aware chunking and resumable synthesis | Not started |
 | ASR verification and audiobook mastering | Planned |
 

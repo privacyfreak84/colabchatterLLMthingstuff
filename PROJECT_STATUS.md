@@ -145,22 +145,36 @@ On 2026-10-31 the user explicitly approved **the narrator voice** and **the HYBR
 
 Scope: this approves the voice and route. It does not approve the spoken form of the nine terms not yet heard with the narrator, and it does not authorize full-book synthesis.
 
+## Remaining-terms listening results (nextrecon7, 2026-11-01)
+
+nextrecon7.txt: 45 new clips (nine terms, HYBRID plus a plain-English control sentence each), 45/45 SHA-256 hashes match, all generated on the user's CPU in about 20 minutes. Clip numbers below are read as N005-N013 in the order Avatamsaka, Buddha, Gautama, Sandhinirmochana-sutra, Subhuti, Yogachara, nirvana, samsara, sutra.
+
+**Decision made:** Buddha keeps its normal English pronunciation (no Hindi-bridged form). The user likes it this way.
+
+**Problems reported by the user:**
+
+1. Clip 5 and the second half of clip 6 have a British accent instead of the American accent of the reference. Clip 8 has a very slight British blend. Clip 10 maybe slightly. The reference has enough r-sounds and other cues to identify an American accent. It is not yet known whether this is in the plain-English sentence, the splice's English parts, or both.
+2. Clips 7 and 8: awkward pause before the term.
+3. Clip 9 (Subhuti): said too slowly, which also makes the surrounding sentence awkward.
+4. Clip 11 (nirvana): different pitch from the rest of the sentence; unnatural.
+5. Clip 13 (sutra): the prefix has a very long trailing "the" before the term.
+
+**Measurements (from the clips, not by ear):**
+
+- Subhuti is the slowest term at 0.47 s per syllable (most terms 0.25-0.38). Bridged terms sit about 2-4 semitones below the English around them (nirvana -2.5, Yogachara -3.9, sutra -3.3).
+- Silence before the term in the fragment-based splices was 140-340 ms against a nominal 60 ms. The prefixes end in stretched function words: the last voiced stretch is about 850 ms for "by" (Gautama), 740 ms for "of" (nirvana) and 520 ms for "of the" (Avatamsaka), against 240 ms for "by" inside the single-pass sentence. Cause: rendering the prefix as a separate fragment makes the model treat its last word as the end of an utterance.
+
+**Fix built (aligned splicing):** instead of three separate renders, take the single-pass English sentence, locate the English term word with forced alignment (pocketsphinx), and swap in the HYBRID term clip after matching its pitch (within +/-4 semitones), pace (0.75-1.25x) and level (+/-4 dB) to the English word it replaces, with 12 ms crossfades. Measured on the nextrecon7 clips: silence before the term fell from 140-340 ms to 0-60 ms (samsara 120 ms), and term pace follows the English word (Subhuti 0.47 -> 0.23 s per syllable). Silences after the term are the narrator's own comma pauses. Not yet judged by ear.
+
+**Accent, not fixed by splicing:** a stand-in option renders the sentence with a plain English word in the term's slot (Alexandria, Montana, Mediterranean manuscript, Emily, Alabama, banana, Sahara, chapter), so a Sanskrit spelling in the text cannot cue the accent; the HYBRID term is swapped in afterwards. This is a hypothesis to test, not an established cause. The aligned-splice report is saved as aligned_splices_report.json in the run folder.
+
 ## Immediate next action
 
-**Single next action:** hear the remaining nine inventory terms (Avatamsaka, Buddha, Gautama, Sandhinirmochana-sutra, Subhuti, Yogachara, nirvana, samsara, sutra) in real manuscript sentences with the approved narrator and HYBRID route only, and record the user's approved spoken form for each. For each term the retest renders the Hindi-bridged splice and the whole sentence read in plain English by the narrator, so the decision per term is plain English or the Hindi-bridged form. Command: `python scripts/run_narrator_retest_local.py --narrator ~/narrator_reference.wav --remaining-terms --routes hybrid --english-control` (see docs/local_cpu_setup.md). The Devanagari forms used are the candidate forms from the earlier audition and are not approved.
+**Single next action:** the user listens to the aligned splices (eight files, built from the existing nextrecon7 clips, no model needed: `python scripts/make_aligned_splices.py --retest-dir ~/audiobook-narrator-retest/v3-narrator-retest --base full`) and says whether the pauses, stretched words, pitch and pace are fixed, and which clips still have a British accent.
 
-Then the rest of Pass 6:
+If the accent persists, test the stand-in renders: `python scripts/run_narrator_retest_local.py --narrator ~/narrator_reference.wav --remaining-terms --routes hybrid --english-standin --aligned-splices` (see docs/local_cpu_setup.md). Per-term choices (plain English or Hindi-bridged) and the approved spoken forms stay open for the eight terms other than Buddha until the user is satisfied with the result.
 
-1. Record the reversible text-to-spoken-form mapping for all 13 inventory terms.
-2. Check that repeated terms stay consistent across the book.
-3. Record an explicitly approved representative narration passage.
-
-Pass 7 and full-book synthesis stay locked until those are approved.
-
-## Notes for later passes
-
-- Chatterbox caps a single generation at 1000 speech tokens (about 40 s of audio). The cap is hardcoded inside `generate()` and hitting it silently cuts the audio off mid-word. The longest clip so far is 23.5 s. Pass 7 chunking should keep chunks well under the cap and flag any clip that reaches it.
-- Add a peak limiter to the final assembly; single-sample overshoots (1-4% above full scale before 16-bit conversion) were seen in two clips.
+Then the rest of Pass 6: the reversible text-to-spoken-form mapping for all 13 terms, a repeated-term consistency check, and an approved representative narration passage. Pass 7 and full-book synthesis stay locked until those are approved.
 
 ## Decision policy
 

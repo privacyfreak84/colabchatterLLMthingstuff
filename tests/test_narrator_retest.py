@@ -259,3 +259,26 @@ def test_surface_spelling_is_used_for_the_split_but_the_inventory_name_for_ids()
     assert by_id["N012_EN_PREFIX"]["text"] == "repetitious cycles:"
     assert by_id["N012_EN_SUFFIX"]["text"].startswith("the working out of routine habits")
     assert by_id["N012_SPLICE_HYBRID"]["join_gap_ms"] == DEFAULT_ASSEMBLY["comma_gap_ms"]
+
+
+# ---- stand-in sentences ----
+
+from tools.narrator_retest import STAND_INS, standin_sentence
+
+
+def test_standin_task_is_added_only_when_requested_and_not_for_buddha():
+    names = ["nirvana", "Buddha"]
+    without = build_narrator_task_specs(select_terms(names), BASE, routes=("HYBRID",))
+    assert not any(s["task_id"].endswith("EN_STANDIN") for s in without)
+    withit = {s["task_id"]: s for s in build_narrator_task_specs(
+        select_terms(names), BASE, routes=("HYBRID",), include_standin=True)}
+    assert withit["N011_EN_STANDIN"]["text"] == standin_sentence("nirvana", REMAINING_TERMS["nirvana"])
+    assert withit["N011_EN_STANDIN"]["mode"] == "english_narrator" and withit["N011_EN_STANDIN"]["language_id"] == "en"
+    assert "N006_EN_STANDIN" not in withit  # Buddha stays in plain English
+
+
+def test_every_standin_has_a_matching_term_and_appears_once_in_its_sentence():
+    for name, word in STAND_INS.items():
+        assert name in REMAINING_TERMS
+        text = standin_sentence(name, REMAINING_TERMS[name])
+        assert text.count(word) == 1

@@ -30,6 +30,7 @@ from tools.narrator_retest import (  # noqa: E402
     CPU_SMOKE_TERMS,
     DEFAULT_GENERATION_PARAMETERS,
     REMAINING_TERM_NAMES,
+    STAND_INS,
     make_aligned_reference,
     make_transfer_bundle,
     run_narrator_retest,
@@ -67,6 +68,11 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--model-dir", type=Path, default=Path.home() / ".cache" / "audiobook" / "chatterbox-v3")
     p.add_argument("--device", choices=["auto", "cpu", "cuda"], default="auto")
     p.add_argument("--threads", type=int, default=None, help="CPU threads for PyTorch (default: PyTorch's choice).")
+    p.add_argument("--english-standin", action="store_true",
+                   help="Also render each sentence with a plain English stand-in word in the term's slot "
+                        "(the bridged term is swapped in afterwards).")
+    p.add_argument("--aligned-splices", action="store_true",
+                   help="After generating, build aligned splices (needs pocketsphinx and praat-parselmouth).")
     p.add_argument("--check-only", action="store_true", help="Only check the recording, then exit.")
     return p.parse_args()
 
@@ -179,12 +185,30 @@ def main() -> int:
         terms=terms,
         routes=routes,
         include_english_control=args.english_control,
+        include_standin=args.english_standin,
     )
     print(json.dumps({k: result[k] for k in ("task_count", "generated_count", "failed_count", "runtime", "output_dir")},
                      indent=2))
+    extra_files: set[str] = set()
+    if args.aligned_splices:
+        try:
+            from tools.aligned_splice import build_aligned_splices
+        except ImportError as exc:
+            print(f"\nAligned splices skipped: {exc}\nInstall: uv pip install pocketsphinx praat-parselmouth")
+        else:
+            for base, wanted in (("full", args.english_control), ("standin", args.english_standin)):
+                if not wanted:
+                    continue
+                names = [n for n in terms if base == "full" or n in STAND_INS]
+                for r in build_aligned_splices(result["output_dir"], names, base=base):
+                    if r["status"] == "generated":
+                        extra_files.add(r["output_file"])
+                        print(f"{r['task_id']}: ok (pitch x{r['pitch_factor']}, pace x{r['duration_factor']})")
+                    else:
+                        print(f"{r['task_id']}: skipped - {r['error']}")
     bundle = make_transfer_bundle(
         result["output_dir"], out / "narrator_retest_bundle.zip", out / "narrator_retest_bundle.txt",
-        only_files={t["output_file"] for t in result["tasks"] if t.get("output_file")},
+        only_files={t["output_file"] for t in result["tasks"] if t.get("output_file")} | extra_files,
     )
     print(f"\nListen to the *_SPLICE_*.wav files in {result['output_dir']}"
           + (" and compare each with its *_EN_FULL.wav." if args.english_control else "."))

@@ -74,7 +74,7 @@ The pace-oriented preset (exaggeration=0.7, cfg_weight=0.3) is an experiment inf
 
 ## Pass 6 — Final narrator and pronunciation approval
 
-**In progress: narrator voice and HYBRID route approved by the user on 2026-10-31; spoken-form mapping for the remaining nine terms and a representative narration passage still to do**
+**In progress: narrator voice and HYBRID route approved (2026-10-31); Buddha stays in plain English; remaining eight terms heard once (2026-11-01) with problems reported (accent drift, join pauses, pace, pitch); aligned splicing built and awaiting the user's listening; spoken-form mapping and a representative narration passage still to do**
 
 - Select the actual audiobook narrator reference recording, preferably a clean, representative 8–10 second speech sample. *(Done: recorded and checked.)*
 - Re-audition only the chosen pronunciation route with that target voice. *(Done for four representative terms; both routes were run, HYBRID preferred.)*

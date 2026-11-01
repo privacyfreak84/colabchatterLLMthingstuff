@@ -138,6 +138,32 @@ REMAINING_TERMS: dict[str, dict[str, str]] = {
     },
 }
 ALL_TERMS: dict[str, dict[str, str]] = {**DEFAULT_TERMS, **REMAINING_TERMS}
+
+# Plain English words of similar length and stress used to hold the term's slot when the
+# English sentence is rendered, so a Sanskrit spelling in the text cannot steer the accent
+# or rhythm of the whole sentence. The bridged term is swapped into that slot afterwards.
+# Buddha has none: the user chose to keep its normal English pronunciation.
+STAND_INS: dict[str, str] = {
+    "Avatamsaka": "Alexandria",
+    "Gautama": "Montana",
+    "Sandhinirmochana-sutra": "Mediterranean manuscript",
+    "Subhuti": "Emily",
+    "Yogachara": "Alabama",
+    "nirvana": "banana",
+    "samsara": "Sahara",
+    "sutra": "chapter",
+}
+
+
+def standin_sentence(term: str, info: Mapping[str, str]) -> str:
+    """The sentence with the term's spelling replaced by its plain English stand-in."""
+    if term not in STAND_INS:
+        raise ValueError(f"No stand-in word is defined for {term!r}.")
+    surface = str(info.get("surface") or term)
+    sentence = str(info["sentence"])
+    if sentence.count(surface) != 1:
+        raise ValueError(f"{surface!r} must occur exactly once in the sentence.")
+    return sentence.replace(surface, STAND_INS[term])
 REMAINING_TERM_NAMES = tuple(REMAINING_TERMS)
 ROUTES = ("HYBRID", "VC")
 
@@ -234,6 +260,9 @@ def make_transfer_bundle(
         archive.write(manifest, manifest.name)
         for wav in wavs:
             archive.write(wav, wav.name)
+        aligned_report = out / "aligned_splices_report.json"
+        if aligned_report.is_file():
+            archive.write(aligned_report, aligned_report.name)
     text_path.write_text(base64.b64encode(zip_path.read_bytes()).decode("ascii") + "\n", encoding="ascii")
     return {"zip": str(zip_path), "text": str(text_path), "wav_count": len(wavs)}
 
@@ -269,6 +298,7 @@ def build_narrator_task_specs(
     assembly: Mapping[str, Any] | None = None,
     routes: Any = ROUTES,
     include_english_control: bool = False,
+    include_standin: bool = False,
 ) -> list[dict[str, Any]]:
     """Build the deterministic retest matrix.
 
@@ -276,6 +306,8 @@ def build_narrator_task_specs(
     tasks (EN_PREFIX, EN_SUFFIX, HYBRID, SPLICE_HYBRID). `include_english_control`
     adds EN_FULL, the whole sentence read in English by the narrator, so the user
     can compare plain English against the Hindi-bridged splice.
+    `include_standin` adds EN_STANDIN for terms that have a stand-in word: the whole
+    sentence with a plain English word in the term's slot, for aligned splicing.
 
     Task IDs and seeds depend on the term, not its position in `terms`, so a
     partial run (for example two terms on a slow CPU) can be extended later
@@ -360,6 +392,8 @@ def build_narrator_task_specs(
             })
         if include_english_control:
             specs.append(tts("EN_FULL", "english_narrator", sentence, "en", 7))
+        if include_standin and term in STAND_INS:
+            specs.append(tts("EN_STANDIN", "english_narrator", standin_sentence(term, info), "en", 8))
 
     ids = [s["task_id"] for s in specs]
     if len(ids) != len(set(ids)):
@@ -429,6 +463,7 @@ def run_narrator_retest(
     assembly: Mapping[str, Any] | None = None,
     routes: Any = ROUTES,
     include_english_control: bool = False,
+    include_standin: bool = False,
 ) -> dict[str, Any]:
     """Run/resume the narrator retest and return a compact result summary.
 
@@ -462,6 +497,7 @@ def run_narrator_retest(
     specs = build_narrator_task_specs(
         terms, base_generation_parameters, term_text_template=term_text_template, assembly=settings,
         routes=routes, include_english_control=include_english_control,
+        include_standin=include_standin,
     )
     manifest_path = out / "narrator_retest_manifest.json"
     identity = {
