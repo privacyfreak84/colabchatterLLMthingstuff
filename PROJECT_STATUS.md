@@ -147,7 +147,7 @@ Scope: this approves the voice and route. It does not approve the spoken form of
 
 ## Immediate next action
 
-**Single next action:** hear the remaining nine inventory terms (Avatamsaka, Buddha, Gautama, Sandhinirmochana-sutra, Subhuti, Yogachara, nirvana, samsara, sutra) in real manuscript sentences with the approved narrator and HYBRID route only, and record the user's approved spoken form for each.
+**Single next action:** hear the remaining nine inventory terms (Avatamsaka, Buddha, Gautama, Sandhinirmochana-sutra, Subhuti, Yogachara, nirvana, samsara, sutra) in real manuscript sentences with the approved narrator and HYBRID route only, and record the user's approved spoken form for each. For each term the retest renders the Hindi-bridged splice and the whole sentence read in plain English by the narrator, so the decision per term is plain English or the Hindi-bridged form. Command: `python scripts/run_narrator_retest_local.py --narrator ~/narrator_reference.wav --remaining-terms --routes hybrid --english-control` (see docs/local_cpu_setup.md). The Devanagari forms used are the candidate forms from the earlier audition and are not approved.
 
 Then the rest of Pass 6:
 

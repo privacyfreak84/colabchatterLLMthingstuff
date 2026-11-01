@@ -215,3 +215,49 @@ def test_aligned_reference_is_first_ten_seconds_padded_to_40ms(tmp_path):
     _wav(tmp_path / "odd.wav", seconds=7.013)
     make_aligned_reference(tmp_path / "odd.wav", tmp_path / "odd_aligned.wav")
     assert len(sf.read(tmp_path / "odd_aligned.wav")[0]) % 960 == 0
+
+
+def test_hybrid_only_run_then_both_routes_reuses_the_hybrid_clips(kwargs, stubs):
+    out = kwargs["output_dir"]
+    first = run_narrator_retest(
+        model=FakeModel(stubs), terms=select_terms(["Maitreya"]), routes=("HYBRID",), **kwargs
+    )
+    assert first["task_count"] == 4 and first["generated_count"] == 4
+    assert not (out / "N002_VC.wav").exists() and not (out / "N002_HI_SOURCE.wav").exists()
+    stamps = {p.name: p.stat().st_mtime_ns for p in out.glob("N*.wav")}
+
+    stubs.clear()
+    both = run_narrator_retest(model=FakeModel(stubs), terms=select_terms(["Maitreya"]), **kwargs)
+    assert both["generated_count"] == 7
+    assert all((out / name).stat().st_mtime_ns == stamp for name, stamp in stamps.items())
+
+
+def test_english_control_is_generated_in_the_narrator_voice(kwargs, stubs):
+    result = run_narrator_retest(
+        model=FakeModel(stubs), terms=select_terms(["nirvana"]), routes=("HYBRID",),
+        include_english_control=True, **kwargs,
+    )
+    assert result["task_count"] == 5 and result["generated_count"] == 5
+    from tools.narrator_retest import REMAINING_TERMS
+    full = [c for c in stubs if c[0] == "gen" and c[4] == REMAINING_TERMS["nirvana"]["sentence"]]
+    assert len(full) == 1 and full[0][1:4] == ("en", "t3:narrator.wav", "gen:narrator.wav")
+
+
+def test_bundle_can_be_limited_to_one_runs_clips(kwargs, stubs, tmp_path):
+    import base64
+    import io
+    import zipfile
+
+    run_narrator_retest(model=FakeModel(stubs), terms=select_terms(["Maitreya"]), routes=("HYBRID",), **kwargs)
+    second = run_narrator_retest(model=FakeModel(stubs), terms=select_terms(["nirvana"]), routes=("HYBRID",), **kwargs)
+    info = make_transfer_bundle(
+        kwargs["output_dir"], tmp_path / "b.zip", tmp_path / "b.txt",
+        only_files={t["output_file"] for t in second["tasks"]},
+    )
+    assert info["wav_count"] == 4
+    names = zipfile.ZipFile(io.BytesIO(base64.b64decode(Path(info["text"]).read_bytes()))).namelist()
+    assert all(n.startswith("N011") for n in names if n.endswith(".wav"))
+    manifest_tasks = json.loads(
+        zipfile.ZipFile(io.BytesIO(base64.b64decode(Path(info["text"]).read_bytes()))).read("narrator_retest_manifest.json")
+    )["tasks"]
+    assert len(manifest_tasks) == 8  # the manifest still covers everything in the folder
