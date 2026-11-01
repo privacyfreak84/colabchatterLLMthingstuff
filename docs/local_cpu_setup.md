@@ -31,6 +31,9 @@ uv pip install --no-deps "git+https://github.com/resemble-ai/chatterbox.git@5de7
 uv pip install "numpy<2" librosa==0.11.0 s3tokenizer transformers==5.2.0 diffusers==0.29.0 \
     "git+https://github.com/resemble-ai/Perth.git@master" conformer==0.3.2 safetensors==0.5.3 \
     omegaconf soundfile huggingface_hub
+
+# Aligned splicing (word timing and pitch/pace matching; both ship ready-made wheels, no model download)
+uv pip install pocketsphinx praat-parselmouth
 ```
 
 Your AMD integrated graphics are not used. PyTorch's GPU support for AMD (ROCm) does not officially cover this kind of laptop chip, so this setup is deliberately CPU-only.
@@ -64,7 +67,25 @@ python scripts/run_narrator_retest_local.py --narrator ~/narrator_reference.wav 
 - Some sentences keep a neighbouring term in English (Gautama sits next to Buddha, Avatamsaka next to Sutra, Yogachara next to Vijnanavada). Judge only the term being tested.
 - The Devanagari forms used are the candidate forms from the earlier audition, not approved spellings. If a Hindi-bridged form sounds wrong, say so and propose the correct form.
 
-## 4. Send the result back
+## 4. Fix the awkward pauses, stretched words, pitch and pace (aligned splicing)
+
+The first splices rendered the English before and after the term as separate fragments, which stretched the last word before the term and left audible pauses. Aligned splicing instead takes the whole English sentence rendered in one pass and swaps in only the term, matched to the English word's pitch, pace and level. It needs no model, only the clips you already have (the plain-English `EN_FULL` clips from `--english-control`):
+
+```bash
+python scripts/make_aligned_splices.py --retest-dir ~/audiobook-narrator-retest/v3-narrator-retest --base full
+```
+
+It writes `N0xx_SPLICE_ALIGNED.wav` next to the other clips, plus `aligned_splices_report.json` with what it changed (pitch factor, pace factor, level, cut times). Compare each with the old `N0xx_SPLICE_HYBRID.wav`.
+
+This does not fix a British accent in the English itself. To test whether a Sanskrit spelling in the sentence is steering the accent, render each sentence with a plain English stand-in word in the term's slot and swap the term in afterwards (about 10 more minutes on CPU):
+
+```bash
+python scripts/run_narrator_retest_local.py --narrator ~/narrator_reference.wav --remaining-terms --routes hybrid --english-control --english-standin --aligned-splices
+```
+
+That adds `N0xx_EN_STANDIN.wav` and `N0xx_SPLICE_ALIGNED_STANDIN.wav`. Buddha has no stand-in because it keeps its normal English pronunciation.
+
+## 5. Send the result back
 
 When it finishes it writes `~/audiobook-narrator-retest/narrator_retest_bundle.txt`, containing only the clips from that run. After listening, upload it to the repository root under a new name (for example `nextrecon7.txt`); do not overwrite earlier bundles.
 
