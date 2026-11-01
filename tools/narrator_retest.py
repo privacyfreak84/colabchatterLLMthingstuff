@@ -66,6 +66,81 @@ DEFAULT_TERMS: dict[str, dict[str, str]] = {
     },
 }
 
+# The other nine inventory terms: real sentences from the approved manuscript, chosen to
+# contain exactly one inventory term where the book allows it (Gautama, Yogachara,
+# Avatamsaka and Sandhinirmochana-sutra each occur in only one or two sentences, so those
+# sentences also contain a neighbouring term that stays in English). Devanagari forms are
+# the candidate forms from the earlier pronunciation audition and are not yet approved.
+# "surface" is the exact spelling to split on when it differs from the inventory name.
+REMAINING_TERMS: dict[str, dict[str, str]] = {
+    "Avatamsaka": {
+        "devanagari": "अवतंसक",
+        "sentence": (
+            "Thomas Cleary (translator), The Flower Ornament Scripture: A Translation of the "
+            "Avatamsaka Sutra (Boston and London: Shambhala Publications, 1993), book 26."
+        ),
+    },
+    "Buddha": {
+        "devanagari": "बुद्ध",
+        "sentence": (
+            "With supremely pure awareness, the Buddha was attached neither to the mundane "
+            "nor the supramundane."
+        ),
+    },
+    "Gautama": {
+        "devanagari": "गौतम",
+        "sentence": (
+            "This is an essential insight, one that distinguishes the special nature of Buddhist Yoga; "
+            "it is based on one of the most important reforms initiated by Gautama Buddha in the "
+            "spiritual practices of ancient yoga."
+        ),
+    },
+    "Sandhinirmochana-sutra": {
+        "devanagari": "संधिनिर्मोचन-सूत्र",
+        "sentence": (
+            "This volume presents a translation of the Sandhinirmochana-sutra, "
+            "\"Scripture Unlocking the Mysteries,\" a complete classical sourcebook of Buddhist Yoga."
+        ),
+    },
+    "Subhuti": {
+        "devanagari": "सुभूति",
+        "sentence": (
+            "\"Based on this principle, Subhuti, you should know that ultimate truth is everywhere one."
+        ),
+    },
+    "Yogachara": {
+        "devanagari": "योगाचार",
+        "sentence": (
+            "This is one of the main texts of that stream of Buddhist tradition known as Vijnanavada, "
+            "\"The Doctrine of Consciousness,\" or Yogachara, \"The Practice of Yoga.\""
+        ),
+    },
+    "nirvana": {
+        "devanagari": "निर्वाण",
+        "sentence": (
+            "This is why it is said that in the realm of nirvana without remaining dependency, "
+            "all sensations cease eternally, without remainder."
+        ),
+    },
+    "samsara": {
+        "devanagari": "संसार",
+        "surface": "Samsara",
+        "sentence": (
+            "repetitious cycles: Samsara, the working out of routine habits of thought, word, and deed."
+        ),
+    },
+    "sutra": {
+        "devanagari": "सूत्र",
+        "sentence": (
+            "The second section of the sutra, entitled \"Characteristics of Ultimate Truth,\" "
+            "opens with a discussion of the nonduality of all things."
+        ),
+    },
+}
+ALL_TERMS: dict[str, dict[str, str]] = {**DEFAULT_TERMS, **REMAINING_TERMS}
+REMAINING_TERM_NAMES = tuple(REMAINING_TERMS)
+ROUTES = ("HYBRID", "VC")
+
 # Splice defaults. Both are recorded in the manifest so a listening decision
 # can be tied to the exact join settings.
 DEFAULT_ASSEMBLY = {
@@ -92,15 +167,15 @@ CPU_SMOKE_TERMS = ("Maitreya", "Vijnanavada")
 
 
 def select_terms(names: Any = None) -> dict[str, dict[str, str]]:
-    """Return a subset of DEFAULT_TERMS by name (all terms when `names` is empty)."""
+    """Return terms by name from ALL_TERMS. With no names: the four original terms."""
     if not names:
         return {k: dict(v) for k, v in DEFAULT_TERMS.items()}
     chosen: dict[str, dict[str, str]] = {}
-    unknown = [n for n in names if n not in DEFAULT_TERMS]
+    unknown = [n for n in names if n not in ALL_TERMS]
     if unknown:
-        raise ValueError(f"Unknown term(s) {unknown}. Valid terms: {sorted(DEFAULT_TERMS)}")
+        raise ValueError(f"Unknown term(s) {unknown}. Valid terms: {sorted(ALL_TERMS)}")
     for name in names:
-        chosen[name] = dict(DEFAULT_TERMS[name])
+        chosen[name] = dict(ALL_TERMS[name])
     return chosen
 
 
@@ -133,13 +208,25 @@ def make_aligned_reference(source_path: str | Path, output_path: str | Path) -> 
     return audio.size / SAMPLE_RATE
 
 
-def make_transfer_bundle(output_dir: str | Path, zip_path: str | Path, text_path: str | Path) -> dict[str, Any]:
-    """Zip the manifest and WAVs, then base64 the zip into a text file for upload to the repo."""
+def make_transfer_bundle(
+    output_dir: str | Path,
+    zip_path: str | Path,
+    text_path: str | Path,
+    only_files: Any = None,
+) -> dict[str, Any]:
+    """Zip the manifest and WAVs, then base64 the zip into a text file for upload to the repo.
+
+    `only_files` (WAV file names) limits the bundle to one run's clips; the manifest
+    always covers every task in the folder.
+    """
     out = Path(output_dir)
     manifest = out / "narrator_retest_manifest.json"
     if not manifest.is_file():
         raise FileNotFoundError(f"No narrator retest manifest in {out}.")
     wavs = sorted(out.glob("N*.wav"))
+    if only_files is not None:
+        wanted = set(only_files)
+        wavs = [w for w in wavs if w.name in wanted]
     if not wavs:
         raise FileNotFoundError(f"No retest WAVs in {out}.")
     zip_path, text_path = Path(zip_path), Path(text_path)
@@ -180,8 +267,15 @@ def build_narrator_task_specs(
     *,
     term_text_template: str = "{devanagari}",
     assembly: Mapping[str, Any] | None = None,
+    routes: Any = ROUTES,
+    include_english_control: bool = False,
 ) -> list[dict[str, Any]]:
-    """Build the deterministic retest matrix: seven tasks per term (five clips, two splices).
+    """Build the deterministic retest matrix.
+
+    Both routes: seven tasks per term (five clips, two splices). HYBRID only: four
+    tasks (EN_PREFIX, EN_SUFFIX, HYBRID, SPLICE_HYBRID). `include_english_control`
+    adds EN_FULL, the whole sentence read in English by the narrator, so the user
+    can compare plain English against the Hindi-bridged splice.
 
     Task IDs and seeds depend on the term, not its position in `terms`, so a
     partial run (for example two terms on a slow CPU) can be extended later
@@ -191,12 +285,15 @@ def build_narrator_task_specs(
         raise ValueError("At least one term is required.")
     if not base_generation_parameters:
         raise ValueError("Base generation parameters must not be empty.")
+    chosen_routes = tuple(str(r).upper() for r in routes)
+    if not chosen_routes or any(r not in ROUTES for r in chosen_routes):
+        raise ValueError(f"routes must be a non-empty subset of {ROUTES}.")
     settings = {**DEFAULT_ASSEMBLY, **dict(assembly or {})}
     params = dict(base_generation_parameters)
     specs: list[dict[str, Any]] = []
 
-    numbering = {name: number for number, name in enumerate(DEFAULT_TERMS, start=1)}
-    next_custom = len(DEFAULT_TERMS) + 1
+    numbering = {name: number for number, name in enumerate(ALL_TERMS, start=1)}
+    next_custom = len(ALL_TERMS) + 1
     for term, info in terms.items():
         term = str(term).strip()
         if term in numbering:
@@ -208,7 +305,7 @@ def build_narrator_task_specs(
         sentence = str(info.get("sentence", "")).strip()
         if not term or not devanagari or not sentence:
             raise ValueError("Every term needs a name, a Devanagari form, and a context sentence.")
-        prefix, suffix, lead = split_context_sentence(sentence, term)
+        prefix, suffix, lead = split_context_sentence(sentence, str(info.get("surface") or term))
         gap_ms = settings["comma_gap_ms"] if "," in lead else settings["gap_ms"]
         p = f"N{index:03d}"
         seed = 20261201 + index * 100
@@ -229,21 +326,25 @@ def build_narrator_task_specs(
 
         specs.append(tts("EN_PREFIX", "english_narrator", prefix, "en", 1))
         specs.append(tts("EN_SUFFIX", "english_narrator", suffix, "en", 2))
-        specs.append(tts("HI_SOURCE", "hindi_source", term_text_template.format(devanagari=devanagari), "hi", 3))
-        specs.append(tts("HYBRID", "hybrid", term_text_template.format(devanagari=devanagari), "hi", 4))
-        specs.append({
-            "task_id": f"{p}_VC",
-            "term": term,
-            "kind": "voice_conversion",
-            "mode": "voice_conversion",
-            "language_id": "",
-            "text": "",
-            "generation_parameters": {},
-            "source_task_id": f"{p}_HI_SOURCE",
-            "parts": [],
-            "seed": seed + 5,
-        })
-        for route in ("HYBRID", "VC"):
+        term_text = term_text_template.format(devanagari=devanagari)
+        if "VC" in chosen_routes:  # the Hindi source clip exists only to feed voice conversion
+            specs.append(tts("HI_SOURCE", "hindi_source", term_text, "hi", 3))
+        if "HYBRID" in chosen_routes:
+            specs.append(tts("HYBRID", "hybrid", term_text, "hi", 4))
+        if "VC" in chosen_routes:
+            specs.append({
+                "task_id": f"{p}_VC",
+                "term": term,
+                "kind": "voice_conversion",
+                "mode": "voice_conversion",
+                "language_id": "",
+                "text": "",
+                "generation_parameters": {},
+                "source_task_id": f"{p}_HI_SOURCE",
+                "parts": [],
+                "seed": seed + 5,
+            })
+        for route in chosen_routes:
             specs.append({
                 "task_id": f"{p}_SPLICE_{route}",
                 "term": term,
@@ -257,6 +358,8 @@ def build_narrator_task_specs(
                 "join_gap_ms": gap_ms,
                 "seed": seed + 6,
             })
+        if include_english_control:
+            specs.append(tts("EN_FULL", "english_narrator", sentence, "en", 7))
 
     ids = [s["task_id"] for s in specs]
     if len(ids) != len(set(ids)):
@@ -324,6 +427,8 @@ def run_narrator_retest(
     terms: Mapping[str, Mapping[str, str]] | None = None,
     term_text_template: str = "{devanagari}",
     assembly: Mapping[str, Any] | None = None,
+    routes: Any = ROUTES,
+    include_english_control: bool = False,
 ) -> dict[str, Any]:
     """Run/resume the narrator retest and return a compact result summary.
 
@@ -355,7 +460,8 @@ def run_narrator_retest(
     settings = {**DEFAULT_ASSEMBLY, **dict(assembly or {})}
     out.mkdir(parents=True, exist_ok=True)
     specs = build_narrator_task_specs(
-        terms, base_generation_parameters, term_text_template=term_text_template, assembly=settings
+        terms, base_generation_parameters, term_text_template=term_text_template, assembly=settings,
+        routes=routes, include_english_control=include_english_control,
     )
     manifest_path = out / "narrator_retest_manifest.json"
     identity = {

@@ -2,7 +2,7 @@
 
 This runs the same narrator-voice retest as notebook section 12, outside Colab, on a CPU-only laptop. It was written for Fedora on an AMD Ryzen laptop with integrated Radeon graphics and 16 GB of RAM.
 
-**Status:** the scripts are tested with a stand-in model, not with the real Chatterbox weights, so the first real run is also the first real test. Expect to report one or two errors.
+**Status:** the scripts have been run on the real model on a CPU-only Fedora laptop (four terms, 28 clips; see PROJECT_STATUS.md). Everything below the first run is tested the same way.
 
 ## 0. Check the recording first (needs nothing installed)
 
@@ -48,9 +48,25 @@ python scripts/run_narrator_retest_local.py --narrator ~/narrator_reference.wav
 - It is resumable. Press Ctrl-C any time and rerun the same command; finished clips are reused. Running more terms later adds to the same folder without redoing finished clips.
 - The manifest records seconds per clip, so the first run tells us how slow your CPU really is. `--threads N` lets you experiment with PyTorch's thread count.
 
-## 3. Send the result back
+## 3. The nine remaining terms (the approved HYBRID route)
 
-When it finishes it writes `~/audiobook-narrator-retest/narrator_retest_bundle.txt`. After listening, upload that file to the repository root as `nextrecon5.txt`, as with the earlier bundles.
+The narrator voice and the HYBRID route are approved. The other nine inventory terms (Avatamsaka, Buddha, Gautama, Sandhinirmochana-sutra, Subhuti, Yogachara, nirvana, samsara, sutra) have not yet been heard with your narrator. This renders each one in a real manuscript sentence with HYBRID only, plus the whole sentence read in plain English by the narrator, so you can choose per term between plain English and the Hindi-bridged form:
+
+```bash
+cd ~/colabchatterLLMthingstuff && git pull
+source .venv/bin/activate
+python scripts/run_narrator_retest_local.py --narrator ~/narrator_reference.wav --remaining-terms --routes hybrid --english-control
+```
+
+- Expect roughly 25 minutes on your laptop (about 15 without `--english-control`). That is an estimate from the measured speed, not a measurement.
+- It uses the same output folder, so the earlier clips stay untouched, and it is resumable: Ctrl-C and rerun the same command.
+- For each term, listen to `N0xx_SPLICE_HYBRID.wav` (Hindi-bridged) and `N0xx_EN_FULL.wav` (plain English), then say which you want. The numbers are N005 Avatamsaka, N006 Buddha, N007 Gautama, N008 Sandhinirmochana-sutra, N009 Subhuti, N010 Yogachara, N011 nirvana, N012 samsara, N013 sutra.
+- Some sentences keep a neighbouring term in English (Gautama sits next to Buddha, Avatamsaka next to Sutra, Yogachara next to Vijnanavada). Judge only the term being tested.
+- The Devanagari forms used are the candidate forms from the earlier audition, not approved spellings. If a Hindi-bridged form sounds wrong, say so and propose the correct form.
+
+## 4. Send the result back
+
+When it finishes it writes `~/audiobook-narrator-retest/narrator_retest_bundle.txt`, containing only the clips from that run. After listening, upload it to the repository root under a new name (for example `nextrecon7.txt`); do not overwrite earlier bundles.
 
 ## What to listen for
 

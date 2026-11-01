@@ -26,9 +26,10 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from tools.narrator_reference import validate_narrator_reference  # noqa: E402
 from tools.narrator_retest import (  # noqa: E402
+    ALL_TERMS,
     CPU_SMOKE_TERMS,
     DEFAULT_GENERATION_PARAMETERS,
-    DEFAULT_TERMS,
+    REMAINING_TERM_NAMES,
     make_aligned_reference,
     make_transfer_bundle,
     run_narrator_retest,
@@ -52,9 +53,16 @@ def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--narrator", required=True, type=Path, help="Narrator reference WAV (8-10 s of clean speech).")
     p.add_argument("--terms", nargs="*", metavar="TERM",
-                   help=f"Terms to run. Default: {' '.join(CPU_SMOKE_TERMS)} on CPU, all on CUDA. "
-                        f"Valid: {' '.join(DEFAULT_TERMS)}")
-    p.add_argument("--all-terms", action="store_true", help="Run every term even on CPU (slow).")
+                   help=f"Terms to run. Default: {' '.join(CPU_SMOKE_TERMS)} on CPU, the first four on CUDA. "
+                        f"Valid: {' '.join(ALL_TERMS)}")
+    p.add_argument("--remaining-terms", action="store_true",
+                   help=f"Run the nine terms not yet heard: {' '.join(REMAINING_TERM_NAMES)}.")
+    p.add_argument("--all-terms", action="store_true", help="Run all 13 inventory terms (slow on CPU).")
+    p.add_argument("--routes", choices=["both", "hybrid", "vc"], default="both",
+                   help="Which bridge route(s) to render. The approved route is hybrid.")
+    p.add_argument("--english-control", action="store_true",
+                   help="Also render each whole sentence in plain English by the narrator, to compare "
+                        "plain English against the Hindi-bridged splice.")
     p.add_argument("--output-dir", type=Path, default=Path.home() / "audiobook-narrator-retest")
     p.add_argument("--model-dir", type=Path, default=Path.home() / ".cache" / "audiobook" / "chatterbox-v3")
     p.add_argument("--device", choices=["auto", "cpu", "cuda"], default="auto")
@@ -129,10 +137,15 @@ def main() -> int:
         torch.set_num_threads(args.threads)
     if args.terms:
         terms = select_terms(args.terms)
-    elif args.all_terms or device == "cuda":
+    elif args.all_terms:
+        terms = select_terms(list(ALL_TERMS))
+    elif args.remaining_terms:
+        terms = select_terms(list(REMAINING_TERM_NAMES))
+    elif device == "cuda":
         terms = select_terms(None)
     else:
         terms = select_terms(CPU_SMOKE_TERMS)
+    routes = {"both": ("HYBRID", "VC"), "hybrid": ("HYBRID",), "vc": ("VC",)}[args.routes]
     print(f"Device: {device} | threads: {torch.get_num_threads()} | terms: {', '.join(terms)}")
     if device == "cpu":
         print("CPU generation is slow. The run is resumable: press Ctrl-C any time and rerun the same command.\n")
@@ -164,13 +177,19 @@ def main() -> int:
         code_revision=CHATTERBOX_COMMIT,
         base_generation_parameters=DEFAULT_GENERATION_PARAMETERS,
         terms=terms,
+        routes=routes,
+        include_english_control=args.english_control,
     )
     print(json.dumps({k: result[k] for k in ("task_count", "generated_count", "failed_count", "runtime", "output_dir")},
                      indent=2))
-    bundle = make_transfer_bundle(result["output_dir"], out / "narrator_retest_bundle.zip",
-                                  out / "narrator_retest_bundle.txt")
-    print(f"\nListen to the *_SPLICE_HYBRID.wav and *_SPLICE_VC.wav files in {result['output_dir']}.")
-    print(f"Bundle for upload: {bundle['text']}  (upload to the repo root as nextrecon5.txt)")
+    bundle = make_transfer_bundle(
+        result["output_dir"], out / "narrator_retest_bundle.zip", out / "narrator_retest_bundle.txt",
+        only_files={t["output_file"] for t in result["tasks"] if t.get("output_file")},
+    )
+    print(f"\nListen to the *_SPLICE_*.wav files in {result['output_dir']}"
+          + (" and compare each with its *_EN_FULL.wav." if args.english_control else "."))
+    print(f"Bundle for upload: {bundle['text']}  ({bundle['wav_count']} clips from this run)")
+    print("Upload it to the repo root under a new name (for example nextrecon7.txt); do not overwrite earlier bundles.")
     return 0
 
 

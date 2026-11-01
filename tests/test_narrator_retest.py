@@ -188,4 +188,74 @@ def test_task_ids_follow_the_term_not_its_position_in_a_subset():
 def test_custom_terms_are_numbered_after_the_defaults():
     custom = {"Zzterm": {"devanagari": "ज़", "sentence": "Then Zzterm spoke clearly today."}}
     ids = [s["task_id"] for s in build_narrator_task_specs(custom, BASE)]
-    assert ids[0] == "N005_EN_PREFIX"
+    assert ids[0] == "N014_EN_PREFIX"
+
+
+# ---- remaining nine terms, HYBRID-only mode, English control ----
+
+from tools.narrator_retest import ALL_TERMS, REMAINING_TERM_NAMES, REMAINING_TERMS
+
+
+def test_all_terms_keep_the_original_four_first_and_cover_all_thirteen():
+    assert list(ALL_TERMS)[:4] == list(DEFAULT_TERMS)
+    assert len(ALL_TERMS) == 13 and len(REMAINING_TERMS) == 9
+    assert set(ALL_TERMS) == set(DEFAULT_TERMS) | set(REMAINING_TERMS)
+    assert select_terms(None).keys() == DEFAULT_TERMS.keys()  # default stays the original four
+
+
+def test_every_remaining_sentence_splits_around_its_term():
+    for name, info in REMAINING_TERMS.items():
+        prefix, suffix, _ = split_context_sentence(info["sentence"], info.get("surface", name))
+        assert prefix and suffix, name
+        assert info["devanagari"], name
+
+
+def test_remaining_terms_get_stable_ids_after_the_original_four():
+    specs = build_narrator_task_specs(select_terms(list(REMAINING_TERM_NAMES)), BASE, routes=("HYBRID",))
+    assert sorted({s["task_id"][:4] for s in specs}) == [f"N{n:03d}" for n in range(5, 14)]
+    assert [s["task_id"] for s in specs[:4]] == [
+        "N005_EN_PREFIX", "N005_EN_SUFFIX", "N005_HYBRID", "N005_SPLICE_HYBRID",
+    ]
+
+
+def test_hybrid_only_has_no_hindi_source_voice_conversion_or_vc_splice():
+    specs = build_narrator_task_specs(select_terms(["Maitreya"]), BASE, routes=("HYBRID",))
+    assert [s["task_id"] for s in specs] == [
+        "N002_EN_PREFIX", "N002_EN_SUFFIX", "N002_HYBRID", "N002_SPLICE_HYBRID",
+    ]
+    assert specs[-1]["parts"] == ["N002_EN_PREFIX", "N002_HYBRID", "N002_EN_SUFFIX"]
+
+
+def test_vc_only_keeps_its_hindi_source():
+    ids = [s["task_id"] for s in build_narrator_task_specs(select_terms(["Maitreya"]), BASE, routes=("VC",))]
+    assert "N002_HI_SOURCE" in ids and "N002_VC" in ids and "N002_HYBRID" not in ids
+
+
+def test_routes_are_validated():
+    for bad in ((), ("HYBRID", "NOPE"), ("hybrid-ish",)):
+        with pytest.raises(ValueError, match="routes"):
+            build_narrator_task_specs(select_terms(["Maitreya"]), BASE, routes=bad)
+
+
+def test_hybrid_only_tasks_are_identical_to_the_same_tasks_in_a_both_routes_run():
+    both = {s["task_id"]: s for s in build_narrator_task_specs(select_terms(["Maitreya"]), BASE)}
+    for spec in build_narrator_task_specs(select_terms(["Maitreya"]), BASE, routes=("HYBRID",)):
+        assert both[spec["task_id"]] == spec  # so finished clips are reusable across modes
+
+
+def test_english_control_reads_the_whole_sentence_in_english():
+    specs = build_narrator_task_specs(select_terms(["nirvana"]), BASE, routes=("HYBRID",), include_english_control=True)
+    control = specs[-1]
+    assert control["task_id"] == "N011_EN_FULL"
+    assert control["mode"] == "english_narrator" and control["language_id"] == "en"
+    assert control["text"] == REMAINING_TERMS["nirvana"]["sentence"]
+    without = build_narrator_task_specs(select_terms(["nirvana"]), BASE, routes=("HYBRID",))
+    assert all(s["task_id"] != "N011_EN_FULL" for s in without)
+
+
+def test_surface_spelling_is_used_for_the_split_but_the_inventory_name_for_ids():
+    specs = build_narrator_task_specs(select_terms(["samsara"]), BASE, routes=("HYBRID",))
+    by_id = {s["task_id"]: s for s in specs}
+    assert by_id["N012_EN_PREFIX"]["text"] == "repetitious cycles:"
+    assert by_id["N012_EN_SUFFIX"]["text"].startswith("the working out of routine habits")
+    assert by_id["N012_SPLICE_HYBRID"]["join_gap_ms"] == DEFAULT_ASSEMBLY["comma_gap_ms"]
