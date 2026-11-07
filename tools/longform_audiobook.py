@@ -571,6 +571,181 @@ def assemble_job_masters(job_dir: str | Path, manifest: dict, sample_rate: int =
     return artifacts
 
 
+def force_rerender_chunks(
+    job_dir: str | Path,
+    manifest: dict,
+    chunk_ids: list[str],
+    *,
+    new_random_seed: bool = True,
+) -> list[str]:
+    """Invalidate selected completed chunks while preserving their prior WAV revisions."""
+    requested = list(dict.fromkeys(str(value).strip().upper() for value in chunk_ids if str(value).strip()))
+    if not requested:
+        return []
+    known = {item["chunk_id"].upper(): item for item in manifest.get("chunks", [])}
+    unknown = [chunk_id for chunk_id in requested if chunk_id not in known]
+    if unknown:
+        raise ValueError("Unknown chunk ID(s): " + ", ".join(unknown))
+
+    root = Path(job_dir)
+    revisions_dir = root / "revisions"
+    rerendered = []
+    for chunk_id in requested:
+        chunk = known[chunk_id]
+        old_seed = int(chunk["seed"])
+        old_path = _safe_relative_path(root, chunk["wav_relpath"])
+        previous_renders = chunk.setdefault("previous_renders", [])
+
+        if old_path.is_file():
+            old_hash = sha256_file(old_path)
+            revision_number = len(previous_renders) + 1
+            revision_name = f"{chunk_id.lower()}_rev{revision_number:02d}_seed{old_seed}.wav"
+            revision_path = revisions_dir / revision_name
+            revisions_dir.mkdir(parents=True, exist_ok=True)
+            os.replace(old_path, revision_path)
+            previous_renders.append({
+                "revision": revision_number,
+                "seed": old_seed,
+                "wav_sha256": old_hash,
+                "duration_seconds": chunk.get("duration_seconds"),
+                "relpath": str(revision_path.relative_to(root)),
+                "preserved_at_utc": utc_now(),
+                "was_verified_complete": bool(
+                    chunk.get("status") == "complete"
+                    and chunk.get("wav_sha256") == old_hash
+                ),
+            })
+
+        if new_random_seed:
+            chunk.setdefault("seed_history", []).append(old_seed)
+            chunk["seed"] = secrets.randbelow(2**31 - 1)
+        chunk["status"] = "pending"
+        for key in (
+            "wav_sha256",
+            "duration_seconds",
+            "elapsed_seconds",
+            "peak_before_limiter",
+            "limiter_gain",
+            "completed_at_utc",
+            "device",
+            "error",
+        ):
+            chunk.pop(key, None)
+        rerendered.append(chunk_id)
+
+    manifest["status"] = "ready_for_rerender"
+    manifest.setdefault("rerender_history", []).append({
+        "timestamp_utc": utc_now(),
+        "chunk_ids": rerendered,
+        "new_random_seed": bool(new_random_seed),
+    })
+    write_manifest(root, manifest)
+    append_job_event(
+        root,
+        "chunks_queued_for_rerender",
+        "Queued selected chunks for a new render; any prior WAVs were preserved under revisions/.",
+        details={"chunk_ids": rerendered, "new_random_seed": bool(new_random_seed)},
+    )
+    return rerendered
+
+
+def build_audio_qa_report(job_dir: str | Path, manifest: dict, sample_rate: int = 24000) -> dict:
+    """Run technical checks only; listening remains authoritative for speech quality."""
+    root = Path(job_dir)
+    items = []
+    errors = []
+    seen_hashes: dict[str, str] = {}
+    total_duration = 0.0
+
+    for chunk in manifest.get("chunks", []):
+        flags = []
+        valid = verify_chunk_wav(root, chunk, sample_rate)
+        if not valid:
+            flags.append("missing_or_invalid_wav")
+            errors.append(chunk["chunk_id"])
+            duration = chunk.get("duration_seconds")
+            sample_peak = None
+        else:
+            wav_path = _safe_relative_path(root, chunk["wav_relpath"])
+            info = sf.info(str(wav_path))
+            duration = round(info.frames / info.samplerate, 3)
+            if duration < 0.5:
+                flags.append("very_short_chunk")
+            if duration > 42.0:
+                flags.append("unusually_long_chunk")
+            words = len(str(chunk.get("text", "")).split())
+            rate = (words / duration * 60.0) if duration > 0 else None
+            if rate is not None and (rate < 65 or rate > 260):
+                flags.append("unusual_estimated_speaking_rate")
+            if chunk.get("split_inside_sentence"):
+                flags.append("split_inside_sentence")
+            if float(chunk.get("limiter_gain", 1.0)) < 0.98:
+                flags.append("peak_limiter_engaged")
+            digest = chunk.get("wav_sha256")
+            if digest:
+                if digest in seen_hashes:
+                    flags.append("duplicate_audio_hash")
+                    flags.append(f"same_audio_as_{seen_hashes[digest]}")
+                else:
+                    seen_hashes[digest] = chunk["chunk_id"]
+            sample_peak = chunk.get("peak_before_limiter")
+            total_duration += duration
+
+        items.append({
+            "chunk_id": chunk["chunk_id"],
+            "section_id": chunk.get("section_id"),
+            "paragraph_index": chunk.get("paragraph_index"),
+            "status": chunk.get("status"),
+            "duration_seconds": duration,
+            "word_count": len(str(chunk.get("text", "")).split()),
+            "estimated_words_per_minute": (
+                round(len(str(chunk.get("text", "")).split()) / duration * 60.0, 1)
+                if duration and duration > 0 else None
+            ),
+            "peak_before_limiter": sample_peak,
+            "flags": flags,
+        })
+
+    flagged = [item for item in items if item["flags"]]
+    report = {
+        "schema_version": 1,
+        "job_id": manifest.get("job_id"),
+        "created_at_utc": utc_now(),
+        "sample_rate": sample_rate,
+        "technical_integrity_pass": not errors,
+        "chunk_count": len(items),
+        "invalid_chunk_ids": errors,
+        "flagged_chunk_count": len(flagged),
+        "flagged_chunks": flagged,
+        "total_chunk_audio_seconds": round(total_duration, 3),
+        "human_review_required": True,
+        "limitations": [
+            "These checks cannot detect accent drift, mispronunciation, unnatural prosody, repetition, or semantic omissions.",
+            "Duration and speaking-rate flags are heuristic review prompts, not automatic rejection criteria.",
+            "Human listening against the approved manuscript remains mandatory.",
+        ],
+        "chunks": items,
+    }
+    atomic_write_json(root / "qa_report.json", report)
+    manifest["qa_report"] = {
+        "relpath": "qa_report.json",
+        "technical_integrity_pass": report["technical_integrity_pass"],
+        "flagged_chunk_count": report["flagged_chunk_count"],
+        "human_review_required": True,
+    }
+    write_manifest(root, manifest)
+    append_job_event(
+        root,
+        "audio_qa_complete",
+        f"Technical QA checked {len(items)} chunks; {len(flagged)} chunk(s) were flagged for listening review.",
+        details={
+            "technical_integrity_pass": report["technical_integrity_pass"],
+            "flagged_chunk_count": report["flagged_chunk_count"],
+        },
+    )
+    return report
+
+
 def create_job_bundle(job_dir: str | Path) -> Path:
     root = Path(job_dir)
     manifest = read_manifest(root)
@@ -579,11 +754,11 @@ def create_job_bundle(job_dir: str | Path) -> Path:
     bundle = root / "audiobook_delivery_bundle.zip"
     temporary = bundle.with_suffix(".zip.partial")
     with zipfile.ZipFile(temporary, "w", compression=zipfile.ZIP_STORED, allowZip64=True) as archive:
-        for relative in ["source.txt", "manifest.json", "events.jsonl", "job.log", "whole_book_master.wav"]:
+        for relative in ["source.txt", "manifest.json", "events.jsonl", "job.log", "whole_book_master.wav", "qa_report.json"]:
             path = root / relative
             if path.is_file():
                 archive.write(path, arcname=relative)
-        for folder_name in ("chunks", "sections"):
+        for folder_name in ("chunks", "sections", "revisions"):
             folder = root / folder_name
             if folder.exists():
                 for path in sorted(folder.rglob("*")):
