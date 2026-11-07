@@ -65,7 +65,7 @@ def test_reference_conditioning_profiles_keep_standard_and_offer_extended_window
     sources = code_sources(notebook)
     reference_helpers = sources[3]
     generation = sources[4]
-    ui = sources[5]
+    ui = sources[6]
 
     assert '"t3_prompt_seconds": 6' in reference_helpers
     assert '"s3gen_prompt_seconds": 10' in reference_helpers
@@ -92,7 +92,7 @@ def test_reference_conditioning_profiles_keep_standard_and_offer_extended_window
 def test_generation_audits_unknown_text_tokens_without_rewriting_input():
     notebook = load_notebook()
     generation = code_sources(notebook)[4]
-    usage = "".join(notebook["cells"][13].get("source", []))
+    usage = next("".join(cell.get("source", [])) for cell in notebook["cells"] if "Usage notes and troubleshooting" in "".join(cell.get("source", [])))
 
     assert "def audit_text_tokenization(" in generation
     assert 'backend.token_to_id("[UNK]")' in generation
@@ -105,11 +105,36 @@ def test_generation_audits_unknown_text_tokens_without_rewriting_input():
     assert "chunk = chunk.replace" not in generation
 
 
+def test_longform_batch_workflow_has_resume_logs_and_audiobook_exports():
+    notebook = load_notebook()
+    sources = code_sources(notebook)
+    batch = sources[5]
+    ui = sources[6]
+    all_text = "\n".join("".join(cell.get("source", [])) for cell in notebook["cells"])
+
+    assert "AUDIOBOOK_HELPER_COMMIT" in batch
+    assert "def run_audiobook_job(" in batch
+    assert "def preview_audiobook_plan(" in batch
+    assert "create_or_resume_job(" in batch
+    assert "verify_chunk_wav(" in batch
+    assert "assemble_job_masters(" in batch
+    assert "create_job_bundle(" in batch
+    assert "append_app_log(" in batch
+    assert "load_activity_logs(" in batch
+    assert 'with gr.Tab("Audiobook Jobs")' in ui
+    assert 'with gr.Tab("Logs and Recovery")' in ui
+    assert "Preview section and chunk plan" in ui
+    assert "Generate / resume audiobook job" in ui
+    assert "approval_checkbox" in ui
+    assert "allowed_paths=[str(LOCAL_OUTPUT_DIR)] + ([str(DRIVE_OUTPUT_DIR)]" in ui
+    assert "full-book approval gate" in all_text.lower()
+
+
 def test_gradio_ui_has_no_login_authentication():
     notebook = load_notebook()
     sources = code_sources(notebook)
     setup = sources[0]
-    ui = sources[5]
+    ui = sources[6]
     all_text = "\n".join(
         "".join(cell.get("source", []))
         for cell in notebook["cells"]
