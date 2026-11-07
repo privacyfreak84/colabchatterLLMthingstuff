@@ -237,6 +237,13 @@ def plan_audiobook_chunks(
                     boundary_after = "chunk"
                     pause_after = float(chunk_pause_seconds)
 
+                tts_text = chunk_text
+                if split_inside_sentence and tts_text and tts_text[-1] not in ".!?,":
+                    # Chatterbox punc_norm otherwise appends a full stop to this
+                    # artificial chunk boundary. Keep source text unchanged and
+                    # record the continuation comma as a TTS-only aid.
+                    tts_text += ","
+
                 chunks.append({
                     "chunk_id": chunk_id,
                     "chunk_index": chunk_index,
@@ -246,6 +253,8 @@ def plan_audiobook_chunks(
                     "line_start": paragraph["line_start"],
                     "line_end": paragraph["line_end"],
                     "text": chunk_text,
+                    "tts_text": tts_text,
+                    "tts_text_sha256": sha256_text(tts_text),
                     "text_sha256": sha256_text(chunk_text),
                     "split_inside_sentence": bool(split_inside_sentence),
                     "boundary_after": boundary_after,
