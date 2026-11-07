@@ -12,7 +12,7 @@ The central idea is simple: **get the book right before generating the book**. T
 
 [**Open the standalone custom-text TTS playground in Google Colab**](https://colab.research.google.com/github/privacyfreak84/colabchatterLLMthingstuff/blob/main/notebooks/03_chatterbox_custom_text_gradio.ipynb)
 
-The third notebook launches a password-protected Gradio web UI around the same pinned Chatterbox Multilingual V3 runtime. It accepts arbitrary text, lets you choose a supported language and reference voice (built-in English/Hindi demo or your own uploaded/recorded clip), exposes generation settings, and saves WAV output to Drive. It is a separate TTS playground: it does not use or change the audiobook manuscript, approval records, or full-book synthesis gate.
+The third notebook launches a password-protected Gradio web UI around the same pinned Chatterbox Multilingual V3 runtime. It accepts arbitrary text, lets you choose a supported language and reference voice (built-in English/Hindi demo or your own uploaded/recorded clip), and exposes generation settings. **Google Drive is optional and off by default**: without it, the model and generated WAV/JSON files stay in temporary Colab storage and the WAV can be downloaded from the UI; set `USE_GOOGLE_DRIVE = True` in the setup cell to persist the model snapshot and generated files in Drive. It is a separate TTS playground: it does not use or change the audiobook manuscript, approval records, or full-book synthesis gate.
 
 ---
 
