@@ -119,6 +119,8 @@ def test_longform_batch_workflow_has_resume_logs_and_audiobook_exports():
     assert "verify_chunk_wav(" in batch
     assert "assemble_job_masters(" in batch
     assert "create_job_bundle(" in batch
+    assert "force_rerender_chunks(" in batch
+    assert "build_audio_qa_report(" in batch
     assert "append_app_log(" in batch
     assert "load_activity_logs(" in batch
     assert 'with gr.Tab("Audiobook Jobs")' in ui
@@ -126,6 +128,9 @@ def test_longform_batch_workflow_has_resume_logs_and_audiobook_exports():
     assert "Preview section and chunk plan" in ui
     assert "Generate / resume audiobook job" in ui
     assert "approval_checkbox" in ui
+    assert "batch_rerender_ids_input" in ui
+    assert "batch_reroll_seed_input" in ui
+    assert "batch_qa_output" in ui
     assert "allowed_paths=[str(LOCAL_OUTPUT_DIR)] + ([str(DRIVE_OUTPUT_DIR)]" in ui
     assert "full-book approval gate" in all_text.lower()
 
