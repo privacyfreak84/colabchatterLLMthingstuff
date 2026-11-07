@@ -255,6 +255,7 @@ def plan_audiobook_chunks(
                     "text": chunk_text,
                     "tts_text": tts_text,
                     "tts_text_sha256": sha256_text(tts_text),
+                    "tts_boundary_comma_added": tts_text != chunk_text,
                     "text_sha256": sha256_text(chunk_text),
                     "split_inside_sentence": bool(split_inside_sentence),
                     "boundary_after": boundary_after,
