@@ -267,9 +267,12 @@ def test_audio_qa_flags_listening_review_without_claiming_quality(tmp_path):
         "wav_sha256": sha256_file(wav_path),
         "duration_seconds": 0.1,
         "limiter_gain": 0.95,
+        "unknown_text_token_count": 2,
     })
     report = build_audio_qa_report(root, manifest)
     assert report["technical_integrity_pass"] is True
     assert report["human_review_required"] is True
     assert report["flagged_chunk_count"] >= 1
     assert "very_short_chunk" in report["flagged_chunks"][0]["flags"]
+    assert "unknown_text_tokens" in report["flagged_chunks"][0]["flags"]
+    assert report["flagged_chunks"][0]["unknown_text_token_count"] == 2
