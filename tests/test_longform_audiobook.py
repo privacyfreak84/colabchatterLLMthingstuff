@@ -69,6 +69,9 @@ def test_plan_splits_long_sentences_and_marks_internal_splits():
     assert plan["chunk_count"] > 1
     assert all(len(item["text"]) <= 120 for item in plan["chunks"])
     assert any(item["split_inside_sentence"] for item in plan["chunks"])
+    assert any(item["tts_boundary_comma_added"] for item in plan["chunks"])
+    assert any(item["tts_text"].endswith(",") for item in plan["chunks"] if item["tts_boundary_comma_added"])
+    assert " ".join(item["text"] for item in plan["chunks"]).replace(" ", "") == text.replace(" ", "")
 
 
 def test_create_job_persists_random_seeds_and_resume_checks_source_and_config(tmp_path):
