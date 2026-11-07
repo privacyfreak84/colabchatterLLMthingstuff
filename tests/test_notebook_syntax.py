@@ -139,6 +139,41 @@ def test_longform_batch_workflow_has_resume_logs_and_audiobook_exports():
     assert "full-book approval gate" in all_text.lower()
 
 
+def test_audiobook_generator_yields_match_all_nine_gradio_outputs():
+    notebook = load_notebook()
+    sources = code_sources(notebook)
+    batch_source = sources[5]
+    ui_source = sources[6]
+
+    batch_tree = ast.parse(batch_source)
+    generator = next(
+        node for node in batch_tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "run_audiobook_job"
+    )
+    yielded_tuple_sizes = []
+    for node in ast.walk(generator):
+        if isinstance(node, ast.Yield) and isinstance(node.value, ast.Tuple):
+            yielded_tuple_sizes.append(len(node.value.elts))
+        elif isinstance(node, ast.Yield) and isinstance(node.value, ast.Tuple):
+            yielded_tuple_sizes.append(len(node.value.elts))
+    assert len(yielded_tuple_sizes) == 5
+    assert set(yielded_tuple_sizes) == {9}
+
+    ui_tree = ast.parse(ui_source)
+    batch_click = next(
+        node for node in ast.walk(ui_tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "click"
+        and node.args
+        and isinstance(node.args[0], ast.Name)
+        and node.args[0].id == "run_batch_button"
+    )
+    outputs = next(keyword.value for keyword in batch_click.keywords if keyword.arg == "outputs")
+    assert isinstance(outputs, ast.List)
+    assert len(outputs.elts) == 9
+
+
 def test_gradio_ui_has_no_login_authentication():
     notebook = load_notebook()
     sources = code_sources(notebook)
