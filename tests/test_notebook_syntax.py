@@ -87,3 +87,20 @@ def test_reference_conditioning_profiles_keep_standard_and_offer_extended_window
 
     assert "conditioning_profile_input = gr.Dropdown(" in ui
     assert "conditioning_profile_input," in ui
+
+
+def test_gradio_ui_has_no_login_authentication():
+    notebook = load_notebook()
+    sources = code_sources(notebook)
+    setup = sources[0]
+    ui = sources[5]
+    all_text = "\n".join(
+        "".join(cell.get("source", []))
+        for cell in notebook["cells"]
+    )
+
+    assert "getpass" not in setup
+    assert "AUTH_USERNAME" not in ui
+    assert "AUTH_PASSWORD" not in ui
+    assert "auth=(" not in ui
+    assert "authentication is disabled" in all_text
