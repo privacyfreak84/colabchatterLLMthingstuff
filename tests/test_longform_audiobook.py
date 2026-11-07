@@ -9,8 +9,10 @@ from tools.longform_audiobook import (
     append_job_event,
     assemble_job_masters,
     assemble_wav,
+    build_audio_qa_report,
     create_job_bundle,
     create_or_resume_job,
+    force_rerender_chunks,
     plan_audiobook_chunks,
     read_log_tail,
     read_manifest,
@@ -174,6 +176,11 @@ def test_streaming_assembly_and_full_job_bundle(tmp_path):
     for section in artifacts["section_masters"]:
         assert Path(root / section["relpath"]).is_file()
 
+    report = build_audio_qa_report(root, manifest)
+    assert report["technical_integrity_pass"] is True
+    assert report["human_review_required"] is True
+    assert (root / "qa_report.json").is_file()
+
     bundle = create_job_bundle(root)
     assert bundle.is_file()
     with zipfile.ZipFile(bundle) as archive:
@@ -181,6 +188,7 @@ def test_streaming_assembly_and_full_job_bundle(tmp_path):
     assert "source.txt" in names
     assert "manifest.json" in names
     assert "whole_book_master.wav" in names
+    assert "qa_report.json" in names
     assert any(name.startswith("chunks/") for name in names)
 
 
@@ -193,3 +201,72 @@ def test_assemble_wav_rejects_mismatched_input_format(tmp_path):
         assert "unexpected format" in str(exc)
     else:
         raise AssertionError("stereo chunk should be rejected")
+
+
+
+def test_force_rerender_preserves_old_audio_and_assigns_new_seed(tmp_path):
+    source = "A sentence to rerender."
+    plan = plan_audiobook_chunks(source)
+    root, manifest, _ = create_or_resume_job(
+        tmp_path, "rerender", source_text=source, source_name="book.txt",
+        plan=plan, generation_config={"voice": "test"}, base_seed=22,
+    )
+    chunk = manifest["chunks"][0]
+    wav_path = root / chunk["wav_relpath"]
+    wav_path.parent.mkdir(parents=True, exist_ok=True)
+    sf.write(wav_path, np.full(2400, 0.1, dtype=np.float32), 24000, subtype="PCM_16")
+    from tools.longform_audiobook import sha256_file
+    original_hash = sha256_file(wav_path)
+    original_seed = chunk["seed"]
+    chunk.update({
+        "status": "complete",
+        "wav_sha256": original_hash,
+        "duration_seconds": 0.1,
+    })
+    write_manifest(root, manifest)
+
+    rerendered = force_rerender_chunks(
+        root, manifest, ["c00001"], new_random_seed=True
+    )
+    assert rerendered == ["C00001"]
+    assert chunk["status"] == "pending"
+    assert chunk["seed"] != original_seed
+    assert not wav_path.exists()
+    previous = chunk["previous_renders"][0]
+    previous_path = root / previous["relpath"]
+    assert previous_path.is_file()
+    assert previous["wav_sha256"] == original_hash
+    assert sha256_file(previous_path) == original_hash
+    assert previous["was_verified_complete"] is True
+
+    try:
+        force_rerender_chunks(root, manifest, ["C99999"])
+    except ValueError as exc:
+        assert "Unknown chunk ID" in str(exc)
+    else:
+        raise AssertionError("unknown rerender chunk ID should fail")
+
+
+def test_audio_qa_flags_listening_review_without_claiming_quality(tmp_path):
+    source = "A longish paragraph with enough words to form one chunk."
+    plan = plan_audiobook_chunks(source)
+    root, manifest, _ = create_or_resume_job(
+        tmp_path, "qa", source_text=source, source_name="book.txt",
+        plan=plan, generation_config={"voice": "test"}, base_seed=3,
+    )
+    chunk = manifest["chunks"][0]
+    wav_path = root / chunk["wav_relpath"]
+    wav_path.parent.mkdir(parents=True, exist_ok=True)
+    sf.write(wav_path, np.full(2400, 0.1, dtype=np.float32), 24000, subtype="PCM_16")
+    from tools.longform_audiobook import sha256_file
+    chunk.update({
+        "status": "complete",
+        "wav_sha256": sha256_file(wav_path),
+        "duration_seconds": 0.1,
+        "limiter_gain": 0.95,
+    })
+    report = build_audio_qa_report(root, manifest)
+    assert report["technical_integrity_pass"] is True
+    assert report["human_review_required"] is True
+    assert report["flagged_chunk_count"] >= 1
+    assert "very_short_chunk" in report["flagged_chunks"][0]["flags"]
