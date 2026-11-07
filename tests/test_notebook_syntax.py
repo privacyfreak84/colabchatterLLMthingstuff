@@ -82,6 +82,8 @@ def test_reference_conditioning_profiles_keep_standard_and_offer_extended_window
     assert "original_conditioning_limits" in generation
     assert ") = original_conditioning_limits" in generation
     assert '"reference_conditioning"' in generation
+    assert 'conditioning_settings["voice_encoder_max_seconds"]' in generation
+    assert 'conditioning_settings["speaker_encoder_max_seconds"]' not in generation
 
     assert "conditioning_profile_input = gr.Dropdown(" in ui
     assert "conditioning_profile_input," in ui
