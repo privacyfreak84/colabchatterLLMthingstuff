@@ -154,8 +154,6 @@ def test_audiobook_generator_yields_match_all_nine_gradio_outputs():
     for node in ast.walk(generator):
         if isinstance(node, ast.Yield) and isinstance(node.value, ast.Tuple):
             yielded_tuple_sizes.append(len(node.value.elts))
-        elif isinstance(node, ast.Yield) and isinstance(node.value, ast.Tuple):
-            yielded_tuple_sizes.append(len(node.value.elts))
     assert len(yielded_tuple_sizes) == 5
     assert set(yielded_tuple_sizes) == {9}
 
@@ -165,9 +163,8 @@ def test_audiobook_generator_yields_match_all_nine_gradio_outputs():
         if isinstance(node, ast.Call)
         and isinstance(node.func, ast.Attribute)
         and node.func.attr == "click"
-        and node.args
-        and isinstance(node.args[0], ast.Name)
-        and node.args[0].id == "run_batch_button"
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "run_batch_button"
     )
     outputs = next(keyword.value for keyword in batch_click.keywords if keyword.arg == "outputs")
     assert isinstance(outputs, ast.List)
