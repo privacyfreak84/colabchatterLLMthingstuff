@@ -69,10 +69,10 @@ def test_reference_conditioning_profiles_keep_standard_and_offer_extended_window
 
     assert '"t3_prompt_seconds": 6' in reference_helpers
     assert '"s3gen_prompt_seconds": 10' in reference_helpers
-    assert '"speaker_encoder_max_seconds": 10' in reference_helpers
+    assert '"voice_encoder_max_seconds": 10' in reference_helpers
     assert '"t3_prompt_seconds": 10' in reference_helpers
     assert '"s3gen_prompt_seconds": 15' in reference_helpers
-    assert '"speaker_encoder_max_seconds": 30' in reference_helpers
+    assert '"voice_encoder_max_seconds": 30' in reference_helpers
     assert "MAX_REFERENCE_AUDIO_SECONDS = 30" in reference_helpers
 
     # The extended settings are applied only while reference conditionals are prepared.
