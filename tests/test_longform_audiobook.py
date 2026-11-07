@@ -1,0 +1,195 @@
+import json
+import zipfile
+from pathlib import Path
+
+import numpy as np
+import soundfile as sf
+
+from tools.longform_audiobook import (
+    append_job_event,
+    assemble_job_masters,
+    assemble_wav,
+    create_job_bundle,
+    create_or_resume_job,
+    plan_audiobook_chunks,
+    read_log_tail,
+    read_manifest,
+    safe_job_id,
+    verify_chunk_wav,
+    write_manifest,
+)
+
+
+def test_safe_job_id_rejects_path_traversal_and_generates_id():
+    assert safe_job_id("chapter-01_take.2") == "chapter-01_take.2"
+    generated = safe_job_id("")
+    assert generated.startswith("book_")
+    for invalid in ("../escape", "/tmp/file", "has spaces", ".hidden"):
+        try:
+            safe_job_id(invalid)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"unsafe job id accepted: {invalid}")
+
+
+def test_plan_detects_sections_and_preserves_all_words():
+    source = (
+        "Preface\n\n"
+        "A first paragraph has two sentences. The second sentence follows.\n\n"
+        "Chapter One: The Path\n\n"
+        "A longer paragraph discusses Avalokiteshvara, Maitreya, and Manjushri."
+    )
+    plan = plan_audiobook_chunks(source, max_chars=120)
+    assert plan["section_count"] == 2
+    assert plan["sections"][0]["title"] == "Preface"
+    assert plan["sections"][1]["title"] == "Chapter One: The Path"
+    assert plan["chunk_count"] >= 3
+    combined = " ".join(item["text"] for item in plan["chunks"])
+    for word in ("Avalokiteshvara", "Maitreya", "Manjushri", "follows."):
+        assert word in combined
+    assert plan["chunks"][-1]["pause_after_seconds"] == 0.0
+    assert plan["chunks"][-1]["boundary_after"] == "end"
+
+
+def test_plan_can_exclude_heading_audio_without_losing_heading_metadata():
+    plan = plan_audiobook_chunks(
+        "# Chapter 1: Introduction\n\nThe actual paragraph.",
+        speak_headings=False,
+    )
+    assert plan["sections"][0]["title"] == "Chapter 1: Introduction"
+    assert [item["text"] for item in plan["chunks"]] == ["The actual paragraph."]
+
+
+def test_plan_splits_long_sentences_and_marks_internal_splits():
+    text = " ".join(f"word{i}" for i in range(90)) + "."
+    plan = plan_audiobook_chunks(text, max_chars=120)
+    assert plan["chunk_count"] > 1
+    assert all(len(item["text"]) <= 120 for item in plan["chunks"])
+    assert any(item["split_inside_sentence"] for item in plan["chunks"])
+
+
+def test_create_job_persists_random_seeds_and_resume_checks_source_and_config(tmp_path):
+    source = "Preface\n\nA first paragraph."
+    plan = plan_audiobook_chunks(source)
+    config = {"language": "en", "temperature": 0.55, "reference_sha256": "abc"}
+    root, manifest, resumed = create_or_resume_job(
+        tmp_path,
+        "my-book",
+        source_text=source,
+        source_name="approved.txt",
+        plan=plan,
+        generation_config=config,
+        base_seed=-1,
+    )
+    assert not resumed
+    assert (root / "source.txt").read_text(encoding="utf-8") == source
+    seeds = [item["seed"] for item in manifest["chunks"]]
+    assert len(seeds) == len(set(seeds))
+    root2, manifest2, resumed2 = create_or_resume_job(
+        tmp_path,
+        "my-book",
+        source_text=source,
+        source_name="approved.txt",
+        plan=plan,
+        generation_config=config,
+        base_seed=-1,
+    )
+    assert resumed2 and root2 == root
+    assert [item["seed"] for item in manifest2["chunks"]] == seeds
+
+    try:
+        create_or_resume_job(
+            tmp_path,
+            "my-book",
+            source_text=source + " changed",
+            source_name="approved.txt",
+            plan=plan_audiobook_chunks(source + " changed"),
+            generation_config=config,
+            base_seed=-1,
+        )
+    except ValueError as exc:
+        assert "different manuscript" in str(exc)
+    else:
+        raise AssertionError("resuming a job with different source should fail")
+
+
+def test_resume_invalidates_missing_or_modified_chunk_audio(tmp_path):
+    source = "A small book."
+    plan = plan_audiobook_chunks(source)
+    root, manifest, _ = create_or_resume_job(
+        tmp_path, "integrity", source_text=source, source_name="book.txt",
+        plan=plan, generation_config={"voice": "narrator"}, base_seed=7,
+    )
+    chunk = manifest["chunks"][0]
+    wav_path = root / chunk["wav_relpath"]
+    sf.write(wav_path, np.zeros(2400, dtype=np.float32), 24000, subtype="PCM_16")
+    from tools.longform_audiobook import sha256_file
+    chunk["status"] = "complete"
+    chunk["wav_sha256"] = sha256_file(wav_path)
+    write_manifest(root, manifest)
+    assert verify_chunk_wav(root, chunk)
+
+    wav_path.write_bytes(wav_path.read_bytes() + b"corruption")
+    assert not verify_chunk_wav(root, chunk)
+    _, resumed, was_resumed = create_or_resume_job(
+        tmp_path, "integrity", source_text=source, source_name="book.txt",
+        plan=plan, generation_config={"voice": "narrator"}, base_seed=7,
+    )
+    assert was_resumed
+    assert resumed["chunks"][0]["status"] == "pending"
+
+
+def test_logs_are_append_only_and_readable(tmp_path):
+    append_job_event(tmp_path, "job_started", "Starting the book.")
+    append_job_event(tmp_path, "chunk_complete", "Chunk 1 saved.", details={"chunk": 1})
+    tail = read_log_tail(tmp_path / "job.log", max_lines=1)
+    assert "chunk_complete" in tail
+    events = [json.loads(line) for line in (tmp_path / "events.jsonl").read_text().splitlines()]
+    assert [event["event"] for event in events] == ["job_started", "chunk_complete"]
+
+
+def test_streaming_assembly_and_full_job_bundle(tmp_path):
+    source = "Preface\n\nFirst sentence. Second sentence.\n\nChapter One\n\nFinal paragraph."
+    plan = plan_audiobook_chunks(source, max_chars=120)
+    root, manifest, _ = create_or_resume_job(
+        tmp_path, "assembly", source_text=source, source_name="book.txt",
+        plan=plan, generation_config={"voice": "test"}, base_seed=12,
+    )
+
+    for chunk in manifest["chunks"]:
+        wav_path = root / chunk["wav_relpath"]
+        wav_path.parent.mkdir(parents=True, exist_ok=True)
+        sf.write(wav_path, np.full(2400, 0.1, dtype=np.float32), 24000, subtype="PCM_16")
+        from tools.longform_audiobook import sha256_file
+        chunk["status"] = "complete"
+        chunk["wav_sha256"] = sha256_file(wav_path)
+        chunk["duration_seconds"] = 0.1
+    write_manifest(root, manifest)
+
+    artifacts = assemble_job_masters(root, manifest)
+    assert manifest["status"] == "complete"
+    assert Path(root / artifacts["whole_book_master"]["relpath"]).is_file()
+    assert len(artifacts["section_masters"]) == 2
+    for section in artifacts["section_masters"]:
+        assert Path(root / section["relpath"]).is_file()
+
+    bundle = create_job_bundle(root)
+    assert bundle.is_file()
+    with zipfile.ZipFile(bundle) as archive:
+        names = set(archive.namelist())
+    assert "source.txt" in names
+    assert "manifest.json" in names
+    assert "whole_book_master.wav" in names
+    assert any(name.startswith("chunks/") for name in names)
+
+
+def test_assemble_wav_rejects_mismatched_input_format(tmp_path):
+    stereo = tmp_path / "stereo.wav"
+    sf.write(stereo, np.zeros((2400, 2), dtype=np.float32), 24000, subtype="PCM_16")
+    try:
+        assemble_wav([stereo], [0.0], tmp_path / "out.wav")
+    except ValueError as exc:
+        assert "unexpected format" in str(exc)
+    else:
+        raise AssertionError("stereo chunk should be rejected")
