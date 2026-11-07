@@ -48,3 +48,13 @@ def test_google_drive_is_opt_in_and_not_required_for_generation():
     assert "if USE_GOOGLE_DRIVE and DRIVE_OUTPUT_DIR is not None:" in generation
     assert "temporary Colab storage" in generation
     assert "drive.mount(\"/content/drive\")" not in output_setup
+
+def test_setup_selects_numpy_for_the_active_python_version_and_shows_progress():
+    setup = code_sources(load_notebook())[0]
+
+    assert '"numpy>=2.0.0" if sys.version_info >= (3, 13) else "numpy<2.0.0"' in setup
+    assert "Python 3.13+ requires NumPy 2.x" in setup
+    assert "Python 3.12 and older require NumPy 1.x" in setup
+    assert '"--progress-bar", "on"' in setup
+    assert "PROJECT_DIR" not in setup  # The notebook never used the cloned repository.
+    assert '"NumPy 2.x is incompatible with this pinned setup"' not in setup
