@@ -58,3 +58,30 @@ def test_setup_selects_numpy_for_the_active_python_version_and_shows_progress():
     assert '"--progress-bar", "on"' in setup
     assert "PROJECT_DIR" not in setup  # The notebook never used the cloned repository.
     assert '"NumPy 2.x is incompatible with this pinned setup"' not in setup
+
+
+def test_reference_conditioning_profiles_keep_standard_and_offer_extended_windows():
+    notebook = load_notebook()
+    sources = code_sources(notebook)
+    reference_helpers = sources[3]
+    generation = sources[4]
+    ui = sources[5]
+
+    assert '"t3_prompt_seconds": 6' in reference_helpers
+    assert '"s3gen_prompt_seconds": 10' in reference_helpers
+    assert '"speaker_encoder_max_seconds": 10' in reference_helpers
+    assert '"t3_prompt_seconds": 10' in reference_helpers
+    assert '"s3gen_prompt_seconds": 15' in reference_helpers
+    assert '"speaker_encoder_max_seconds": 30' in reference_helpers
+    assert "MAX_REFERENCE_AUDIO_SECONDS = 30" in reference_helpers
+
+    # The extended settings are applied only while reference conditionals are prepared.
+    assert "model.ENC_COND_LEN = int(" in generation
+    assert "model.DEC_COND_LEN = int(" in generation
+    assert "model.t3.hp.speech_cond_prompt_len = int(" in generation
+    assert "original_conditioning_limits" in generation
+    assert ") = original_conditioning_limits" in generation
+    assert '"reference_conditioning"' in generation
+
+    assert "conditioning_profile_input = gr.Dropdown(" in ui
+    assert "conditioning_profile_input," in ui
