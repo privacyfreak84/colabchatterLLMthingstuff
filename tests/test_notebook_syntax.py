@@ -89,6 +89,22 @@ def test_reference_conditioning_profiles_keep_standard_and_offer_extended_window
     assert "conditioning_profile_input," in ui
 
 
+def test_generation_audits_unknown_text_tokens_without_rewriting_input():
+    notebook = load_notebook()
+    generation = code_sources(notebook)[4]
+    usage = "".join(notebook["cells"][13].get("source", []))
+
+    assert "def audit_text_tokenization(" in generation
+    assert 'backend.token_to_id("[UNK]")' in generation
+    assert "model.tokenizer.text_to_tokens(chunk, language_id=language_id)" in generation
+    assert '"text_token_audit": text_token_audit' in generation
+    assert "unknown [UNK] text token(s)" in generation
+    assert "Mixed scripts / repeated phrases" in usage
+    # This is diagnostic only: it must not silently replace or drop manuscript text.
+    assert "text = text.replace" not in generation
+    assert "chunk = chunk.replace" not in generation
+
+
 def test_gradio_ui_has_no_login_authentication():
     notebook = load_notebook()
     sources = code_sources(notebook)
