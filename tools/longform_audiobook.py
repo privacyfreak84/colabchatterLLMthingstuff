@@ -689,6 +689,9 @@ def build_audio_qa_report(job_dir: str | Path, manifest: dict, sample_rate: int 
                 flags.append("unusual_estimated_speaking_rate")
             if chunk.get("split_inside_sentence"):
                 flags.append("split_inside_sentence")
+            unknown_count = int(chunk.get("unknown_text_token_count", 0) or 0)
+            if unknown_count:
+                flags.append("unknown_text_tokens")
             if float(chunk.get("limiter_gain", 1.0)) < 0.98:
                 flags.append("peak_limiter_engaged")
             digest = chunk.get("wav_sha256")
@@ -708,6 +711,7 @@ def build_audio_qa_report(job_dir: str | Path, manifest: dict, sample_rate: int 
             "status": chunk.get("status"),
             "duration_seconds": duration,
             "word_count": len(str(chunk.get("text", "")).split()),
+            "unknown_text_token_count": int(chunk.get("unknown_text_token_count", 0) or 0),
             "estimated_words_per_minute": (
                 round(len(str(chunk.get("text", "")).split()) / duration * 60.0, 1)
                 if duration and duration > 0 else None
