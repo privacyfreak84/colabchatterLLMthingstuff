@@ -123,6 +123,8 @@ def test_longform_batch_workflow_has_resume_logs_and_audiobook_exports():
     assert "build_audio_qa_report(" in batch
     assert "append_app_log(" in batch
     assert "load_activity_logs(" in batch
+    assert "list_recent_audiobook_jobs(" in batch
+    assert "audit_text_tokenization(" in batch
     assert 'with gr.Tab("Audiobook Jobs")' in ui
     assert 'with gr.Tab("Logs and Recovery")' in ui
     assert "Preview section and chunk plan" in ui
@@ -131,6 +133,8 @@ def test_longform_batch_workflow_has_resume_logs_and_audiobook_exports():
     assert "batch_rerender_ids_input" in ui
     assert "batch_reroll_seed_input" in ui
     assert "batch_qa_output" in ui
+    assert "List saved audiobook jobs" in ui
+    assert "inspected_qa_output" in ui
     assert "allowed_paths=[str(LOCAL_OUTPUT_DIR)] + ([str(DRIVE_OUTPUT_DIR)]" in ui
     assert "full-book approval gate" in all_text.lower()
 
