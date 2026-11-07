@@ -10,6 +10,10 @@ The central idea is simple: **get the book right before generating the book**. T
 
 [**Open Stage 2 in Google Colab: Chatterbox V3 pronunciation auditions**](https://colab.research.google.com/github/privacyfreak84/colabchatterLLMthingstuff/blob/main/notebooks/02_pronunciation_auditions.ipynb)
 
+[**Open the standalone custom-text TTS playground in Google Colab**](https://colab.research.google.com/github/privacyfreak84/colabchatterLLMthingstuff/blob/main/notebooks/03_chatterbox_custom_text_gradio.ipynb)
+
+The third notebook launches a password-protected Gradio web UI around the same pinned Chatterbox Multilingual V3 runtime. It accepts arbitrary text, lets you choose a supported language and reference voice (built-in English/Hindi demo or your own uploaded/recorded clip), exposes generation settings, and saves WAV output to Drive. It is a separate TTS playground: it does not use or change the audiobook manuscript, approval records, or full-book synthesis gate.
+
 ---
 
 ## What this project is trying to produce
@@ -195,6 +199,7 @@ The aligned-splice step needs `pocketsphinx` and `praat-parselmouth`. The runner
 |---|---|
 | `notebooks/01_pdf_reconnaissance.ipynb` | Stage 1: PDF extraction, structure validation, section exports, repair proposals, manuscript approval |
 | `notebooks/02_pronunciation_auditions.ipynb` | Stage 2: pinned Chatterbox V3 setup, smoke tests, pronunciation auditions, bridge tests, narrator retests |
+| `notebooks/03_chatterbox_custom_text_gradio.ipynb` | Standalone custom-text Chatterbox V3 TTS app with a password-protected Gradio UI; independent of the audiobook pipeline |
 | `tools/manuscript_repair.py` | Builds provenance-aware, reversible repair proposals and a pronunciation inventory draft |
 | `tools/manuscript_approval.py` | Validates the review bundle, creates approved manuscript copies, and prepares source-context pronunciation prompts |
 | `tools/pronunciation_audition.py` | Builds and runs checkpointed English/IAST/Devanagari audition tasks with tokenizer preflight |
