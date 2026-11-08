@@ -733,6 +733,30 @@ def filter_plan_sections(plan: dict, selected_section_ids: list[str] | None = No
     return result
 
 
+
+def _resume_generation_config_identity(config: dict) -> dict:
+    """Canonicalize synthesis settings while ignoring bookkeeping/default selectors.
+
+    Legacy jobs predate these selection fields. An all-source/default selection is
+    semantically identical to the old behaviour and must remain resumable.
+    Partial paragraph or section selections remain part of the identity.
+    """
+    identity = dict(config or {})
+    identity.pop("helper_commit", None)
+
+    if identity.get("selection_mode") in (None, "all"):
+        identity.pop("selection_mode", None)
+        identity.pop("selected_section_ids", None)
+
+    paragraph_start = identity.get("text_paragraph_start", 1)
+    paragraph_end = identity.get("text_paragraph_end", 0)
+    if paragraph_start in (None, 1) and paragraph_end in (None, 0):
+        identity.pop("text_paragraph_start", None)
+        identity.pop("text_paragraph_end", None)
+
+    return identity
+
+
 def create_or_resume_job(
     jobs_root: str | Path,
     job_id: str | None,
@@ -754,11 +778,7 @@ def create_or_resume_job(
     source_text = normalize_manuscript_text(source_text)
     source_hash = sha256_text(source_text)
     source_pdf_hash = sha256_bytes(source_pdf_bytes) if source_pdf_bytes is not None else None
-    config_identity = dict(generation_config)
-    # Helper revisions may add bookkeeping/selection support without changing
-    # the spoken audio recipe. Keep helper_commit in provenance, but exclude it
-    # from the resume identity so existing jobs remain resumable after helper fixes.
-    config_identity.pop("helper_commit", None)
+    config_identity = _resume_generation_config_identity(generation_config)
     config_json = json.dumps(config_identity, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
     config_hash = sha256_text(config_json)
     plan_identity = [
@@ -778,8 +798,9 @@ def create_or_resume_job(
             raise ValueError("This job ID already belongs to different manuscript text. Use a new job ID.")
         if manifest.get("source_pdf_sha256") != source_pdf_hash:
             raise ValueError("This job ID was created from a different source PDF. Use the original PDF or a new job ID.")
-        saved_config_identity = dict(manifest.get("generation_config", {}))
-        saved_config_identity.pop("helper_commit", None)
+        saved_config_identity = _resume_generation_config_identity(
+            manifest.get("generation_config", {})
+        )
         saved_config_json = json.dumps(
             saved_config_identity,
             sort_keys=True,
