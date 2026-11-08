@@ -441,6 +441,103 @@ def load_verified_accent_checkpoint(checkpoint_path: str | Path, *, torch_module
     )
 
 
+def download_verified_accent_checkpoint(
+    cache_dir: str | Path,
+    *,
+    progress_callback: Callable[[str], None] | None = None,
+    downloader=None,
+) -> str:
+    """Return a byte-verified checkpoint, repairing stale/partial local downloads once.
+
+    The checkpoint is stored as a normal file in a dedicated local_dir rather than
+    Hugging Face's blob/symlink cache. This also behaves more predictably when the
+    selected cache directory is on mounted Google Drive.
+    """
+    if downloader is None:
+        from huggingface_hub import hf_hub_download
+        downloader = hf_hub_download
+
+    checkpoint_dir = Path(cache_dir) / "accentcl-checkpoint"
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    expected_path = checkpoint_dir / ACCENTCL_CHECKPOINT
+
+    def verified(path: Path) -> bool:
+        if not path.is_file() or path.stat().st_size != ACCENTCL_CHECKPOINT_SIZE_BYTES:
+            return False
+        return sha256_file(path).lower() == ACCENTCL_CHECKPOINT_SHA256.lower()
+
+    if verified(expected_path):
+        if progress_callback:
+            progress_callback("Reusing the cached, hash-verified AccentCL checkpoint.")
+        return str(expected_path)
+
+    def remove_incomplete_files(candidate: Path | None = None) -> None:
+        # unlink() removes a symlink itself, not the target it points to.
+        for path in {expected_path, candidate}:
+            if path is not None:
+                try:
+                    if path.is_file() or path.is_symlink():
+                        path.unlink()
+                except FileNotFoundError:
+                    pass
+        # Hugging Face may leave a resumable partial after an interrupted transfer.
+        for partial in checkpoint_dir.rglob("*.incomplete"):
+            try:
+                partial.unlink()
+            except FileNotFoundError:
+                pass
+
+    had_bad_cache = expected_path.exists() or expected_path.is_symlink()
+    if had_bad_cache:
+        remove_incomplete_files()
+
+    last_problem = "download did not produce a checkpoint file"
+    for attempt in range(2):
+        force = had_bad_cache or attempt > 0
+        if progress_callback:
+            progress_callback(
+                "Downloading AccentCL checkpoint (about 2.56 GB)"
+                + (" again after clearing an incomplete cache..." if force else "...")
+            )
+        kwargs = {
+            "repo_id": ACCENTCL_MODEL_REPO,
+            "filename": ACCENTCL_CHECKPOINT,
+            "revision": ACCENTCL_CHECKPOINT_REVISION,
+            "local_dir": str(checkpoint_dir),
+        }
+        if force:
+            kwargs["force_download"] = True
+
+        candidate = None
+        try:
+            candidate = Path(downloader(**kwargs))
+            if verified(candidate):
+                return str(candidate)
+            actual_size = candidate.stat().st_size if candidate.is_file() else 0
+            if actual_size != ACCENTCL_CHECKPOINT_SIZE_BYTES:
+                last_problem = (
+                    f"size mismatch: expected {ACCENTCL_CHECKPOINT_SIZE_BYTES:,} bytes, "
+                    f"received {actual_size:,} bytes"
+                )
+            else:
+                actual_hash = sha256_file(candidate)
+                last_problem = (
+                    "SHA-256 mismatch: expected "
+                    f"{ACCENTCL_CHECKPOINT_SHA256}, received {actual_hash}"
+                )
+        except Exception as exc:
+            last_problem = f"{type(exc).__name__}: {exc}"
+
+        remove_incomplete_files(candidate)
+        had_bad_cache = True
+
+    raise RuntimeError(
+        "AccentCL checkpoint download remained incomplete or failed integrity "
+        f"verification after one forced retry ({last_problem}). The cache directory "
+        f"is {checkpoint_dir}. Check available disk space and network access, then retry."
+    )
+
+
 def load_accentcl_model(
     *,
     cache_dir: str | Path,
@@ -489,17 +586,10 @@ def load_accentcl_model(
         progress_callback("Downloading the AccentCL checkpoint (about 2.56 GB)...")
     cache_path = Path(cache_dir)
     cache_path.mkdir(parents=True, exist_ok=True)
-    checkpoint_path = hf_hub_download(
-        repo_id=ACCENTCL_MODEL_REPO,
-        filename=ACCENTCL_CHECKPOINT,
-        revision=ACCENTCL_CHECKPOINT_REVISION,
-        cache_dir=str(cache_path),
+    checkpoint_path = download_verified_accent_checkpoint(
+        cache_path,
+        progress_callback=progress_callback,
     )
-    if Path(checkpoint_path).stat().st_size != ACCENTCL_CHECKPOINT_SIZE_BYTES:
-        raise RuntimeError(
-            "Downloaded AccentCL checkpoint has the wrong size. "
-            "Delete the incomplete cached checkpoint and retry."
-        )
 
     if progress_callback:
         progress_callback("Downloading Whisper Large v3 files if they are not cached...")
