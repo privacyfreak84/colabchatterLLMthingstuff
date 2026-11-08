@@ -559,6 +559,41 @@ def download_verified_accent_checkpoint(
     )
 
 
+def patch_accentcl_fp16_mask_overflow(repo_dir: str | Path) -> bool:
+    """Patch AccentCL's -1e9 masked-fill sentinel to a dtype-safe minimum.
+
+    Under CUDA autocast, the attention scores are float16. Converting -1e9 to
+    torch.Half overflows before softmax. torch.finfo(scores.dtype).min is finite
+    and representable for both float16 and float32, and still makes masked
+    positions negligible in the softmax.
+    """
+    source_path = Path(repo_dir) / "src" / "accentcl" / "models" / "base.py"
+    if not source_path.is_file():
+        raise FileNotFoundError(
+            f"Pinned AccentCL pooling source was not found: {source_path}"
+        )
+
+    source = source_path.read_text(encoding="utf-8")
+    vulnerable = "scores = scores.masked_fill(~mask, -1e9)"
+    replacement = (
+        "scores = scores.masked_fill(~mask, torch.finfo(scores.dtype).min)"
+    )
+    if replacement in source:
+        return False
+    occurrences = source.count(vulnerable)
+    if occurrences != 1:
+        raise RuntimeError(
+            "Could not safely apply the pinned AccentCL FP16 mask fix: "
+            f"expected one vulnerable masked_fill expression, found {occurrences}."
+        )
+
+    source_path.write_text(
+        source.replace(vulnerable, replacement),
+        encoding="utf-8",
+    )
+    return True
+
+
 def load_accentcl_model(
     *,
     cache_dir: str | Path,
@@ -599,6 +634,16 @@ def load_accentcl_model(
     ).stdout.strip()
     if actual_commit != ACCENTCL_COMMIT:
         raise RuntimeError("AccentCL source checkout did not match the pinned commit.")
+
+    # Patch a known upstream FP16 overflow in attentive pooling. The pinned
+    # source is verified above before this single, exact compatibility edit.
+    fp16_patch_applied = patch_accentcl_fp16_mask_overflow(repo_path)
+    if progress_callback:
+        progress_callback(
+            "Applied dtype-safe AccentCL pooling mask."
+            if fp16_patch_applied
+            else "AccentCL pooling mask is already dtype-safe."
+        )
 
     sys.path.insert(0, str(repo_path))
     from src.accentcl.models.accentcl import WhisperCLAccentModel
