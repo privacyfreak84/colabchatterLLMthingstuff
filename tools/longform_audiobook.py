@@ -976,6 +976,102 @@ def assemble_wav(
     }
 
 
+def assemble_selected_chunk_wavs(
+    job_dir: str | Path,
+    manifest: dict,
+    selected_chunk_ids: list[str] | None = None,
+    *,
+    include_all_completed: bool = False,
+    sample_rate: int = 24000,
+    output_name: str | None = None,
+) -> dict:
+    """Assemble a user-selected ordered subset, or all valid completed chunk WAVs.
+
+    Selected IDs are resolved against manifest order, never UI selection order.
+    The resulting master is stored under assemblies/ and recorded in the manifest.
+    """
+    root = Path(job_dir).resolve()
+    chunks = list(manifest.get("chunks", []))
+    if not chunks:
+        raise ValueError("This audiobook job has no chunk WAVs to assemble.")
+
+    if include_all_completed:
+        chosen = [item for item in chunks if item.get("status") == "complete"]
+        if not chosen:
+            raise ValueError("This job has no completed chunks to assemble.")
+    else:
+        requested = [
+            str(value).strip().upper()
+            for value in (selected_chunk_ids or [])
+            if str(value).strip()
+        ]
+        requested = list(dict.fromkeys(requested))
+        if not requested:
+            raise ValueError("Select one or more chunk WAVs, or enable 'Use all completed chunks'.")
+        known = {str(item.get("chunk_id", "")).upper() for item in chunks}
+        unknown = [value for value in requested if value not in known]
+        if unknown:
+            raise ValueError("Unknown chunk ID(s): " + ", ".join(unknown))
+        requested_set = set(requested)
+        chosen = [
+            item for item in chunks
+            if str(item.get("chunk_id", "")).upper() in requested_set
+        ]
+
+    invalid = [
+        item["chunk_id"]
+        for item in chosen
+        if item.get("status") != "complete"
+        or not verify_chunk_wav(root, item, sample_rate)
+    ]
+    if invalid:
+        raise ValueError(
+            "Cannot assemble incomplete or invalid chunk WAVs: "
+            + ", ".join(invalid[:20])
+        )
+
+    paths = [_safe_relative_path(root, item["wav_relpath"]) for item in chosen]
+    pauses = [
+        float(item.get("pause_after_seconds", 0.0)) if index < len(chosen) - 1 else 0.0
+        for index, item in enumerate(chosen)
+    ]
+
+    safe_name = safe_output_name(output_name)
+    prefix = safe_name or safe_output_name(manifest.get("output_name")) or "audiobook"
+    created_at = utc_now()
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    suffix = "all" if include_all_completed else "selected"
+    assembly_id = f"{stamp}_{secrets.token_hex(3)}"
+    filename = f"{_prefixed_stem(prefix, f'master_{suffix}_{assembly_id}')}.wav"
+    output_path = root / "assemblies" / filename
+    info = assemble_wav(paths, pauses, output_path, sample_rate=sample_rate)
+
+    record = {
+        "assembly_id": assembly_id,
+        "relpath": str(output_path.relative_to(root)),
+        "created_at_utc": created_at,
+        "include_all_completed": bool(include_all_completed),
+        "selected_chunk_ids": [item["chunk_id"] for item in chosen],
+        "chunk_count": len(chosen),
+        "audio": info,
+    }
+    manifest.setdefault("assemblies", []).append(record)
+    write_manifest(root, manifest)
+    append_job_event(
+        root,
+        "selected_wav_assembly_complete",
+        "Assembled a user-selected set of chunk WAVs.",
+        details={
+            "assembly_id": assembly_id,
+            "chunk_ids": record["selected_chunk_ids"],
+            "include_all_completed": bool(include_all_completed),
+            "duration_seconds": info["duration_seconds"],
+            "sha256": info["sha256"],
+        },
+    )
+    return record
+
+
 def assemble_job_masters(job_dir: str | Path, manifest: dict, sample_rate: int = 24000) -> dict:
     root = Path(job_dir)
     incomplete = [item["chunk_id"] for item in manifest["chunks"] if item.get("status") != "complete" or not verify_chunk_wav(root, item, sample_rate)]
@@ -1256,19 +1352,15 @@ def create_job_bundle(job_dir: str | Path) -> Path:
     bundle = root / bundle_name
     temporary = bundle.with_suffix(".zip.partial")
     with zipfile.ZipFile(temporary, "w", compression=zipfile.ZIP_STORED, allowZip64=True) as archive:
-        master_relative = (
-            manifest.get("artifacts", {}).get("whole_book_master", {}).get("relpath")
-            or "whole_book_master.wav"
-        )
         base_files = [
             "source.txt", "source_original.pdf", "manifest.json",
-            "events.jsonl", "job.log", master_relative, "qa_report.json",
+            "events.jsonl", "job.log", "qa_report.json",
         ]
         for relative in base_files:
             path = _safe_relative_path(root, relative)
             if path.is_file():
                 archive.write(path, arcname=relative)
-        for folder_name in ("chunks", "sections", "revisions"):
+        for folder_name in ("chunks", "sections", "revisions", "assemblies"):
             folder = root / folder_name
             if folder.exists():
                 for path in sorted(folder.rglob("*")):
