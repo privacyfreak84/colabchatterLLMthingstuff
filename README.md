@@ -132,7 +132,7 @@ The immediate checkpoint recorded in [PROJECT_STATUS.md](PROJECT_STATUS.md) is t
 
 ### Latest automated test result
 
-GitHub Actions on the latest main commit ran the Python helper test suite successfully: **114 passed** (workflow run 32, 2026-11-01). These tests cover the helper code, deterministic task planning, validation, checkpoint/resume behaviour, and audio-processing logic. They do **not** validate real-model audio quality, run a full GPU synthesis, or prove that the complete audiobook pipeline is finished.
+GitHub Actions on commit `be19176eedd45bb348f36340f3059c0a08a6f4ce` passed **160 tests** (workflow run [113](https://github.com/privacyfreak84/colabchatterLLMthingstuff/actions/runs/42462049087), 2026-11-08). The new tests cover WAV/MP3 validation, streamed overlapping-window decoding, timestamped regional reports, and notebook wiring. CI does **not** download the multi-gigabyte AccentCL/Whisper models, run Colab GPU inference, validate accent predictions on Chatterbox audio, or prove that the complete audiobook pipeline is finished.
 
 ---
 
