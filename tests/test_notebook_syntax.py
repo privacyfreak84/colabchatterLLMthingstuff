@@ -341,7 +341,7 @@ def test_section_selection_and_atomic_rerender_controls_are_wired_into_batch_ui(
     assert "pending_replacement = chunk.pop(" in batch
     assert 'section_selection_input = gr.Dropdown(' in ui
     assert "multiselect=True" in ui
-    assert 'label="Sections to speak (preview the source first; empty = all sections)"' in ui
+    assert 'label="Sections to speak (empty selection = all)"' in ui
     assert "batch_keep_previous_renders_input" in ui
     assert "selected_sections_master.wav" in all_text
     assert "atomically replaces the old active file" in all_text.lower()
@@ -463,7 +463,7 @@ def test_accent_factorization_patch_is_pinned_and_wired_into_audiobook_jobs():
     assert "accent_reference_mode" in batch
     assert "batch_accent_reference_audio_input = gr.Audio(" in ui
     assert "batch_accent_reference_audio_input," in ui
-    assert "The narrator reference supplies speaker identity" in ui
+    assert "The narrator recording supplies speaker identity" in ui
 
     # The patched model must factor the two input paths before decoding, not score
     # or rewrite generated audio afterwards.
@@ -506,7 +506,7 @@ def test_pitch_preserving_speech_rate_control_is_wired_to_quick_and_audiobook_ge
     assert "model_duration_seconds" in quick and "model_duration_seconds" in batch
     assert "0.85x = slower" in ui
     assert "does not lower the voice pitch or add reverb/echo" in ui
-    assert "Use a new Job ID to create" in ui
+    assert "A different narration rate requires a new Job ID" in ui
 
     quick_tree = ast.parse(quick)
     quick_callback = next(
