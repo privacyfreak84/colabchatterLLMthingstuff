@@ -463,7 +463,7 @@ def load_accentcl_model(
         raise RuntimeError("AccentCL checkpoint is missing its label mapping or model weights.")
 
     # Instantiate the upstream architecture, but bypass its unsafe convenience
-    # loader, which currently invokes torch.load(weights_only=False).
+    # loader, which currently uses unrestricted pickle deserialization.
     model = WhisperCLAccentModel(num_classes=len(label2id), label2id=label2id)
     model.load_state_dict(state_dict, strict=True)
     del checkpoint, state_dict
