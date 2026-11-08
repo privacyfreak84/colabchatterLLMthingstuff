@@ -76,12 +76,13 @@ def normalize_manuscript_text(text: str) -> str:
     return normalized
 
 
-def extract_pdf_manuscript(pdf_source: str | Path | bytes) -> dict:
-    """Extract text from a text-based PDF and report pages that may need OCR/manual review.
-
-    OCR is intentionally not attempted. Image-only/scanned pages are flagged so the
-    user cannot mistake a low-text extraction for a complete manuscript.
-    """
+def extract_pdf_manuscript(
+    pdf_source: str | Path | bytes,
+    *,
+    page_start: int = 1,
+    page_end: int | None = None,
+) -> dict:
+    """Extract selectable PDF text and preserve one-based page provenance; this is not OCR."""
     try:
         from pypdf import PdfReader
     except ImportError as exc:
@@ -96,8 +97,8 @@ def extract_pdf_manuscript(pdf_source: str | Path | bytes) -> dict:
     else:
         path = Path(pdf_source)
         source_name = path.name
-        if not path.is_file():
-            raise FileNotFoundError(f"PDF not found: {path}")
+        if not path.is_file() or path.suffix.lower() != ".pdf":
+            raise ValueError("Select an existing PDF file.")
         if path.stat().st_size > MAX_PDF_BYTES:
             raise ValueError(f"PDF exceeds the {MAX_PDF_BYTES // (1024 * 1024)} MiB safety limit.")
         pdf_bytes = path.read_bytes()
@@ -107,40 +108,102 @@ def extract_pdf_manuscript(pdf_source: str | Path | bytes) -> dict:
         reader = PdfReader(stream, strict=False)
         if reader.is_encrypted:
             try:
-                result = reader.decrypt("")
+                decrypted = reader.decrypt("")
             except Exception as exc:
                 raise ValueError("This PDF is encrypted and cannot be opened with an empty password.") from exc
-            if not result:
+            if not decrypted:
                 raise ValueError("This PDF is password-protected. Remove the password before uploading.")
-        page_count = len(reader.pages)
-        if page_count == 0:
+        total_pages = len(reader.pages)
+        if total_pages == 0:
             raise ValueError("The PDF contains no pages.")
-        if page_count > MAX_PDF_PAGES:
-            raise ValueError(f"PDF has {page_count:,} pages; the safety limit is {MAX_PDF_PAGES:,}.")
-        page_texts = []
-        page_records = []
-        for page_number, page in enumerate(reader.pages, start=1):
+        if total_pages > MAX_PDF_PAGES:
+            raise ValueError(f"PDF has {total_pages:,} pages; the safety limit is {MAX_PDF_PAGES:,}.")
+
+        start_page = int(page_start)
+        end_page = total_pages if page_end in (None, 0) else int(page_end)
+        if start_page < 1 or end_page < start_page or end_page > total_pages:
+            raise ValueError(
+                f"Invalid PDF page range. Choose pages 1 through {total_pages}; "
+                "end page 0 means the last page."
+            )
+
+        page_texts: list[str] = []
+        page_records: list[dict] = []
+        warnings: list[str] = []
+        for page_number in range(start_page, end_page + 1):
+            page = reader.pages[page_number - 1]
+            extraction_mode = "layout"
             try:
-                page_text = page.extract_text(extraction_mode="layout") or ""
+                raw_page_text = page.extract_text(extraction_mode="layout") or ""
             except TypeError:
-                page_text = page.extract_text() or ""
-            except Exception:
-                page_text = page.extract_text() or ""
-            page_text = page_text.replace("\x00", "").strip()
-            page_texts.append(page_text)
-            char_count = len(re.sub(r"\s+", "", page_text))
+                extraction_mode = "default_fallback"
+                raw_page_text = page.extract_text() or ""
+            except Exception as exc:
+                extraction_mode = "default_fallback"
+                warnings.append(
+                    f"Page {page_number}: layout extraction failed ({type(exc).__name__}); tried default extraction."
+                )
+                try:
+                    raw_page_text = page.extract_text() or ""
+                except Exception as fallback_exc:
+                    warnings.append(
+                        f"Page {page_number}: text extraction failed ({type(fallback_exc).__name__})."
+                    )
+                    raw_page_text = ""
+
+            cleaned_page = normalize_manuscript_text(raw_page_text.replace("\x00", ""))
+            page_characters = len(re.sub(r"\s+", "", cleaned_page))
+            page_texts.append(cleaned_page)
             page_records.append({
                 "page": page_number,
-                "characters_without_whitespace": char_count,
-                "likely_image_only_or_empty": char_count < 20,
+                "characters_without_whitespace": page_characters,
+                "extraction_mode": extraction_mode,
+                "likely_image_only_or_empty": page_characters < 20,
             })
+            if page_characters == 0:
+                warnings.append(f"Page {page_number}: no selectable text found.")
+            elif page_characters < 80:
+                warnings.append(
+                    f"Page {page_number}: only {page_characters} non-whitespace characters extracted; inspect for scanned content or extraction gaps."
+                )
+
     except ValueError:
         raise
     except Exception as exc:
         raise ValueError(f"Could not read PDF: {type(exc).__name__}: {exc}") from exc
 
-    raw_text = "\n".join(page_texts)
-    normalized_text = normalize_manuscript_text(raw_text)
+    nonempty_pages = [
+        (record, text)
+        for record, text in zip(page_records, page_texts)
+        if text.strip()
+    ]
+    # A single newline between pages is deliberate: it is treated as a visual wrap,
+    # not a paragraph break, so a sentence continuing across a page stays continuous.
+    combined_page_text = "\n".join(text for _, text in nonempty_pages)
+    normalized_text = normalize_manuscript_text(combined_page_text)
+
+    total_characters = sum(item["characters_without_whitespace"] for item in page_records)
+    if not normalized_text or (
+        total_characters < 100
+        and max((item["characters_without_whitespace"] for item in page_records), default=0) < 40
+    ):
+        raise ValueError(
+            "Almost no selectable text was extracted. This PDF is probably scanned/image-only. "
+            "The notebook extracts embedded text but does not perform OCR. Run OCR first, then upload the searchable PDF."
+        )
+
+    page_spans = []
+    cursor = 0
+    for index, (record, page_text) in enumerate(nonempty_pages):
+        char_start = cursor
+        char_end = char_start + len(page_text)
+        page_spans.append({
+            "page_number": record["page"],
+            "char_start": char_start,
+            "char_end": char_end,
+        })
+        cursor = char_end + (1 if index < len(nonempty_pages) - 1 else 0)
+
     empty_pages = [
         item["page"] for item in page_records
         if item["likely_image_only_or_empty"]
@@ -149,33 +212,37 @@ def extract_pdf_manuscript(pdf_source: str | Path | bytes) -> dict:
         item["page"] for item in page_records
         if item["characters_without_whitespace"] < 80
     ]
-    total_chars = sum(item["characters_without_whitespace"] for item in page_records)
-    sparse_ratio = len(low_text_pages) / page_count
-    warnings = []
-    if not normalized_text or total_chars < 100:
-        warnings.append("Almost no selectable text was extracted. This is probably a scanned/image-only PDF; OCR or a text-based PDF is required.")
-    elif empty_pages:
-        warnings.append(
-            f"{len(empty_pages)} page(s) contain almost no selectable text. These may be scanned pages, blank pages, or figures; inspect them before synthesis."
-        )
-    elif sparse_ratio > 0.20:
-        warnings.append(
-            f"{len(low_text_pages)} page(s) contain unusually little text. Check the page-by-page extraction report."
-        )
+    metadata = getattr(reader, "metadata", None)
+    pdf_metadata = {}
+    if metadata is not None:
+        for key, value in (
+            ("title", getattr(metadata, "title", None)),
+            ("author", getattr(metadata, "author", None)),
+            ("subject", getattr(metadata, "subject", None)),
+            ("creator", getattr(metadata, "creator", None)),
+        ):
+            if value:
+                pdf_metadata[key] = str(value)[:500]
 
     return {
         "text": normalized_text,
         "source_name": source_name,
         "pdf_sha256": sha256_bytes(pdf_bytes),
         "pdf_size_bytes": len(pdf_bytes),
-        "page_count": page_count,
+        "total_pdf_pages": total_pages,
+        "selected_page_start": start_page,
+        "selected_page_end": end_page,
+        "selected_page_count": end_page - start_page + 1,
         "extracted_characters": len(normalized_text),
         "page_records": page_records,
+        "page_spans": page_spans,
         "empty_or_image_only_pages": empty_pages,
         "low_text_pages": low_text_pages,
         "warnings": warnings,
+        "pdf_metadata": pdf_metadata,
         "ocr_attempted": False,
-        "extraction_method": "pypdf layout text extraction",
+        "extraction_method": "pypdf layout text extraction with default-mode fallback",
+        "line_wraps_normalized": True,
     }
 
 
@@ -197,166 +264,6 @@ def sha256_file(path: str | Path) -> str:
         for block in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(block)
     return digest.hexdigest()
-
-
-def normalize_wrapped_text(text: str) -> str:
-    """Collapse visual line wraps to spaces while retaining blank-line paragraphs and punctuation."""
-    if not isinstance(text, str):
-        raise TypeError("Manuscript text must be a string.")
-    normalized = text.replace("\r\n", "\n").replace("\r", "\n")
-    normalized = normalized.replace("\x0c", "\n").replace("\ufeff", "")
-    lines = normalized.split("\n")
-    paragraphs: list[str] = []
-    current: list[str] = []
-
-    def flush() -> None:
-        if current:
-            paragraphs.append(" ".join(part for part in current if part))
-            current.clear()
-
-    for raw_line in lines:
-        line = " ".join(raw_line.split())
-        if not line:
-            flush()
-            continue
-        # Soft hyphens are explicit optional line-break markers, not punctuation.
-        if current and current[-1].endswith("\u00ad"):
-            current[-1] = current[-1][:-1] + line
-        else:
-            current.append(line)
-    flush()
-    return "\n\n".join(paragraphs).strip()
-
-
-def extract_pdf_text(
-    pdf_path: str | Path,
-    *,
-    page_start: int = 1,
-    page_end: int | None = None,
-    max_pages: int = 2500,
-) -> dict:
-    """Extract selectable PDF text with page provenance; this is not OCR."""
-    path = Path(pdf_path)
-    if not path.is_file() or path.suffix.lower() != ".pdf":
-        raise ValueError("Select an existing PDF file.")
-    try:
-        from pypdf import PdfReader
-    except ImportError as exc:
-        raise RuntimeError("PDF support requires pypdf. Rerun the notebook setup cell.") from exc
-
-    try:
-        reader = PdfReader(str(path), strict=False)
-    except Exception as exc:
-        raise ValueError(f"Could not open PDF ({type(exc).__name__}: {exc}).") from exc
-
-    if getattr(reader, "is_encrypted", False):
-        raise ValueError("This PDF is encrypted. Decrypt it first and upload an unprotected copy.")
-    total_pages = len(reader.pages)
-    if total_pages < 1:
-        raise ValueError("The PDF contains no pages.")
-    if total_pages > max_pages:
-        raise ValueError(f"The PDF has {total_pages:,} pages; the current safety limit is {max_pages:,} pages.")
-
-    start = int(page_start)
-    end = total_pages if page_end in (None, 0) else int(page_end)
-    if start < 1 or end < start or end > total_pages:
-        raise ValueError(f"Invalid PDF page range. Choose pages 1 through {total_pages}, with end page 0 meaning the last page.")
-
-    extracted_pages: list[dict] = []
-    page_texts: list[str] = []
-    warnings: list[str] = []
-    total_chars = 0
-
-    for page_number in range(start, end + 1):
-        page = reader.pages[page_number - 1]
-        raw_text = ""
-        extraction_mode = "layout"
-        try:
-            raw_text = page.extract_text(extraction_mode="layout") or ""
-        except TypeError:
-            extraction_mode = "default_fallback"
-            raw_text = page.extract_text() or ""
-        except Exception as exc:
-            extraction_mode = "default_fallback"
-            warnings.append(f"Page {page_number}: layout extraction failed ({type(exc).__name__}); tried default extraction.")
-            try:
-                raw_text = page.extract_text() or ""
-            except Exception as fallback_exc:
-                warnings.append(f"Page {page_number}: text extraction failed ({type(fallback_exc).__name__}).")
-                raw_text = ""
-
-        cleaned_page = normalize_wrapped_text(raw_text)
-        page_chars = len(cleaned_page.replace("\n", " "))
-        total_chars += page_chars
-        extracted_pages.append({
-            "page_number": page_number,
-            "characters_extracted": page_chars,
-            "sha256": sha256_text(cleaned_page),
-            "extraction_mode": extraction_mode,
-            "has_selectable_text": bool(cleaned_page.strip()),
-        })
-        if not cleaned_page.strip():
-            warnings.append(f"Page {page_number}: no selectable text found.")
-        elif page_chars < 40:
-            warnings.append(f"Page {page_number}: only {page_chars} characters extracted; inspect this page for scanned content, figures, or extraction gaps.")
-        page_texts.append(cleaned_page)
-
-    nonempty_pages = [
-        (record, text)
-        for record, text in zip(extracted_pages, page_texts)
-        if text.strip()
-    ]
-    combined_with_page_breaks = "\n".join(text for _, text in nonempty_pages)
-    cleaned_text = normalize_wrapped_text(combined_with_page_breaks)
-    if not cleaned_text or (total_chars < 100 and max((p["characters_extracted"] for p in extracted_pages), default=0) < 40):
-        raise ValueError(
-            "This PDF appears to contain scanned/image-only pages or too little selectable text. "
-            "This notebook extracts embedded text but does not perform OCR. Run OCR first, then upload the searchable PDF."
-        )
-
-    page_spans = []
-    cursor = 0
-    for index, (record, page_text) in enumerate(nonempty_pages):
-        page_start_offset = cursor
-        page_end_offset = page_start_offset + len(page_text)
-        page_spans.append({
-            "page_number": record["page_number"],
-            "char_start": page_start_offset,
-            "char_end": page_end_offset,
-        })
-        cursor = page_end_offset + (1 if index < len(nonempty_pages) - 1 else 0)
-
-    metadata = getattr(reader, "metadata", None)
-    pdf_metadata = {}
-    if metadata is not None:
-        for key, value in (
-            ("title", getattr(metadata, "title", None)),
-            ("author", getattr(metadata, "author", None)),
-            ("subject", getattr(metadata, "subject", None)),
-            ("creator", getattr(metadata, "creator", None)),
-        ):
-            if value:
-                pdf_metadata[key] = str(value)[:500]
-
-    return {
-        "text": cleaned_text,
-        "page_spans": page_spans,
-        "metadata": {
-            "source_kind": "pdf",
-            "source_filename": path.name,
-            "pdf_sha256": sha256_file(path),
-            "total_pdf_pages": total_pages,
-            "selected_page_start": start,
-            "selected_page_end": end,
-            "selected_page_count": end - start + 1,
-            "extracted_character_count": len(cleaned_text),
-            "pages": extracted_pages,
-            "pdf_metadata": pdf_metadata,
-            "warnings": warnings,
-            "ocr_performed": False,
-            "text_wrapping_normalized": True,
-        },
-    }
 
 
 def safe_job_id(value: str | None = None) -> str:
@@ -473,7 +380,7 @@ def plan_audiobook_chunks(
     if any(not 0 <= float(value) <= 5 for value in pauses):
         raise ValueError("Every pause must be between 0 and 5 seconds.")
 
-    normalized = normalize_wrapped_text(source_text)
+    normalized = normalize_manuscript_text(source_text)
     lines = normalized.split("\n")
     source_pages = source_pages or []
     raw_sections: list[dict] = []
@@ -562,6 +469,20 @@ def plan_audiobook_chunks(
                 else:
                     boundary_after = "chunk"
                     pause_after = float(chunk_pause_seconds)
+
+                local_char_start = paragraph["text"].find(chunk_text, paragraph_search_cursor)
+                if local_char_start < 0:
+                    local_char_start = paragraph_search_cursor
+                local_char_end = local_char_start + len(chunk_text)
+                paragraph_search_cursor = local_char_end
+                chunk_char_start = paragraph["char_start"] + local_char_start
+                chunk_char_end = paragraph["char_start"] + local_char_end
+                chunk_source_pages = [
+                    int(page["page_number"])
+                    for page in source_pages
+                    if int(page.get("char_start", 0)) < chunk_char_end
+                    and int(page.get("char_end", 0)) > chunk_char_start
+                ]
 
                 tts_text = chunk_text
                 if split_inside_sentence and tts_text and tts_text[-1] not in ".!?,":
@@ -749,10 +670,8 @@ def create_or_resume_job(
             raise ValueError("This job ID has different voice/settings/reference configuration. Use the original settings or a new job ID.")
         if manifest.get("plan_sha256") != plan_hash:
             raise ValueError("The chunk plan differs from the saved job. Use the original chunk settings or a new job ID.")
-        if manifest.get("source_artifact") != artifact_record:
-            raise ValueError("The original uploaded PDF/TXT/MD file differs from the saved job. Re-upload the exact same file or use a new Job ID.")
-        if manifest.get("source_metadata") != source_metadata:
-            raise ValueError("The source extraction or PDF page-range settings differ from the saved job. Restore them or use a new Job ID.")
+        if manifest.get("pdf_extraction_report") != (pdf_extraction_report or None):
+            raise ValueError("The PDF extraction report or selected page range differs from the saved job. Restore it or use a new Job ID.")
         if len(manifest.get("chunks", [])) != len(plan["chunks"]):
             raise ValueError("Saved job chunk count does not match the current plan.")
         for saved, planned in zip(manifest["chunks"], plan["chunks"]):
@@ -1119,11 +1038,6 @@ def create_job_bundle(job_dir: str | Path) -> Path:
             path = root / relative
             if path.is_file():
                 archive.write(path, arcname=relative)
-        source_artifact = manifest.get("source_artifact")
-        if source_artifact and source_artifact.get("relpath"):
-            artifact_path = _safe_relative_path(root, source_artifact["relpath"])
-            if artifact_path.is_file():
-                archive.write(artifact_path, arcname=source_artifact["relpath"])
         for folder_name in ("chunks", "sections", "revisions"):
             folder = root / folder_name
             if folder.exists():
