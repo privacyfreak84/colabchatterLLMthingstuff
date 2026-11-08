@@ -710,3 +710,44 @@ def test_selected_sections_assemble_into_a_named_combined_master_and_bundle(tmp_
     with zipfile.ZipFile(bundle) as archive:
         assert "selected_sections_master.wav" in archive.namelist()
         assert "whole_book_master.wav" not in archive.namelist()
+
+
+def test_text_paragraph_range_selects_one_based_inclusive_paragraphs_after_reflow():
+    from tools.longform_audiobook import select_text_paragraph_range
+
+    raw = (
+        "First paragraph wraps over\nmultiple visual lines.\n\n"
+        "Second paragraph is separate.\n\n"
+        "Third paragraph is also separate."
+    )
+    selected, report = select_text_paragraph_range(raw, 2, 2)
+    assert selected == "Second paragraph is separate."
+    assert report == {
+        "total_paragraphs": 3,
+        "selected_paragraph_start": 2,
+        "selected_paragraph_end": 2,
+        "selected_paragraph_count": 1,
+    }
+
+    selected_all, report_all = select_text_paragraph_range(raw, 1, 0)
+    assert selected_all.startswith("First paragraph wraps over multiple visual lines.")
+    assert report_all["selected_paragraph_end"] == 3
+    assert report_all["selected_paragraph_count"] == 3
+
+
+def test_text_paragraph_range_rejects_invalid_or_empty_ranges():
+    from tools.longform_audiobook import select_text_paragraph_range
+
+    for start, end in ((0, 1), (2, 1), (1, 99)):
+        try:
+            select_text_paragraph_range("One.\n\nTwo.", start, end)
+        except ValueError as exc:
+            assert "Invalid text paragraph range" in str(exc)
+        else:
+            raise AssertionError("invalid paragraph range should fail")
+    try:
+        select_text_paragraph_range("   ")
+    except ValueError as exc:
+        assert "no paragraphs" in str(exc)
+    else:
+        raise AssertionError("empty text should fail")
