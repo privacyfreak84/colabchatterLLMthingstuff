@@ -308,13 +308,13 @@ The first live use of the redesigned notebook exposed two independent stale-help
 - The notebook loaded audiobook helper commit `b7286e8`, which predates `assemble_selected_chunk_wavs()`. The current notebook called that missing API, causing `AttributeError` during manual assembly.
 - The notebook loaded AccentCL helper commit `b632506`, whose checkpoint download was not pinned to the immutable Hugging Face artifact revision and did not verify the published SHA-256. That older loader raised `Downloaded AccentCL checkpoint is unexpectedly small or incomplete.`
 
-**Fix committed:** both notebook helper references now point to immutable repository commit `90c6070f4520cceee7fe475e16ad3485aee13989`. That snapshot contains the manual selected-chunk assembly function and the AccentCL loader with an immutable checkpoint revision, exact expected byte size, and SHA-256 verification. The TTS model itself was not implicated by either traceback.
+**Fix committed:** the audiobook helper remains pinned to `90c6070f4520cceee7fe475e16ad3485aee13989`, which contains manual selected-chunk assembly. The AccentCL helper is pinned independently to the newer checkpoint-recovery implementation. Keeping the audiobook helper pin stable preserves the generation fingerprint of existing jobs. The TTS model itself was not implicated by either traceback.
 
 **Regression coverage:** added a static notebook test that checks both pins and verifies the corresponding helper APIs/checkpoint-verification constants exist in the repository source of truth.
 
 **Not yet verified:** a live Colab rerun of manual assembly and the AccentCL download/scan after reloading the corrected helper cell. The progress bars and PyTorch/diffusers deprecation notices are not the cause of either failure.
 
-**Next action:** reload the updated notebook, rerun its helper-loading cell, then retry assembly from the already-generated chunk WAVs. After that, retry Accent Check; it should now fetch the immutable, hash-checked checkpoint revision. Do not regenerate completed chunks solely to fix these helper-import errors.
+**Next action:** reload the updated notebook/helper cell, retry assembly from the already-generated chunk WAVs, then retry Accent Check with the self-repairing checkpoint loader. Do not regenerate completed chunks solely to fix helper/cache errors.
 
 ## Decision policy
 
@@ -340,4 +340,28 @@ A live audiobook job failed immediately after job creation with `UnboundLocalErr
 **Not yet verified:** retrying the job in a live Colab runtime and confirming playback of the first generated chunk. The failed run stopped before the first chunk was synthesized. Reuse the same Job ID only with the same manuscript, page/section selection, narrator/accent references, and generation settings; the resume helper checks these identities before continuing.
 
 **Next action:** reload the corrected notebook code in Colab and retry the short pilot with the same Job ID and unchanged settings. If Drive persistence was off and the runtime was reset, the old job folder is gone; recreate it with the same Job ID and inputs.
+
+## Selectable chunk rerender and resilient AccentCL cache (2026-11-08)
+
+### Targeted rerender workflow
+
+The Create / Resume repair field is now a multiselect populated from the selected Job ID rather than a free-text ID box.
+
+- **Load chunks from this Job ID** reads the saved manifest and presents each chunk in manuscript order with its chunk ID, saved state, section, and a short text excerpt. Complete chunks are marked verified only when their WAV passes the saved hash, mono, and sample-rate checks.
+- Section IDs are also selectable. Selecting one section queues every chunk in that section; selecting one or more chunk IDs queues only those chunks.
+- The generation callback accepts the multiselect values and preserves compatibility with comma-separated IDs. Only selected chunks are marked pending; other valid completed chunks remain untouched and are skipped.
+- The original valid WAV stays active until the new chunk is successfully generated and atomically installed. Optional backup copies the prior WAV into `revisions/`.
+- To repair one accent/problem passage: use Accent Check on that saved chunk WAV, note its chunk ID, then load the same Job ID in Create / Resume and select only that ID. Reuse the same approved manuscript/range, narrator and style references, and generation settings. The selected chunk is rerendered with the saved job's chunk plan; the rest of the audiobook is not synthesized again.
+
+### AccentCL checkpoint cache recovery
+
+The new AccentCL downloader stores the checkpoint as a normal file in a dedicated `accentcl-checkpoint/` local directory instead of the old Hugging Face blob/symlink cache layout. It verifies the pinned immutable revision's exact byte size and SHA-256, removes a bad local artifact and partial download files, and retries once with `force_download=True`. It also checks the legacy cache location: a hash-valid legacy artifact is reused; an incomplete or invalid legacy model cache is removed before downloading. A persistently bad download fails with the actual received byte count and a disk/network diagnostic rather than attempting deserialization.
+
+The audiobook helper pin remains unchanged at `90c6070f4520cceee7fe475e16ad3485aee13989` so existing jobs' saved `helper_commit` generation fingerprint remains compatible. Accent analysis is independently pinned to `7325ce585a17f2c7184b7dbce4f86a40f6acac77`.
+
+**Regression coverage added:** retry after a wrong-size download, force-refresh of an existing bad file, reuse of a verified checkpoint, cleanup/reuse of the legacy Hub cache, and static UI checks for exact chunk selection and the selected-only generation path.
+
+**Not yet verified:** the new UI and cache-recovery logic have not been rerun in a live Colab session. This update does not establish that a particular synthetic chunk is North American or British; AccentCL scores remain a review aid. The Diffusers LoRA deprecation and missing optional `pkuseg` Chinese segmenter warnings are unrelated to either reported failure.
+
+**Next action:** reload the notebook code, use Accent Check on one saved chunk, load the same Job ID in Create / Resume, select only that chunk from the list, and rerender it. Then rerun Accent Check to compare the replacement. Retry the large AccentCL checkpoint download in the same runtime and confirm that it finishes size/hash verification.
 
