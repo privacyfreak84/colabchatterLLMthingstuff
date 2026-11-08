@@ -101,7 +101,7 @@ The pace-oriented preset (exaggeration=0.7, cfg_weight=0.3) is an experiment inf
 - Run duration, file-integrity, silence, clipping, discontinuity, duplicate, and missing-chunk checks.
 - Optionally run a spoiler-free regional accent scan over finished WAV/MP3 audio. The standalone notebook implements AccentCL timestamp windows and transcript-free reports; validate its predictions on actual Chatterbox narration before relying on it, and retain human listening review.
 - Use the standalone notebook's chunk/section rerender controls to replace defective portions without regenerating good portions. Replacement is atomic and old WAVs are backed up only when the optional backup setting is enabled.
-- Rebuild individual section masters and one combined WAV after generation or rerender: `whole_book_master.wav` for the full source or `selected_sections_master.wav` for a deliberately selected subset.
+- Listen to chapter transitions, flagged chunks, and representative samples.
 - Listen to chapter transitions, flagged chunks, and representative samples.
 - Assemble chapter masters and the complete audiobook.
 - Export the agreed listening format and verify playback from beginning to end.
