@@ -471,6 +471,27 @@ def download_verified_accent_checkpoint(
             progress_callback("Reusing the cached, hash-verified AccentCL checkpoint.")
         return str(expected_path)
 
+    # Remove the old Hugging Face blob/symlink cache layout used by earlier
+    # notebook versions. Reuse it only if the exact pinned artifact verifies;
+    # otherwise its partial blob can consume several gigabytes on Drive.
+    legacy_repo_cache = Path(cache_dir) / (
+        "models--" + ACCENTCL_MODEL_REPO.replace("/", "--")
+    )
+    legacy_snapshot = (
+        legacy_repo_cache
+        / "snapshots"
+        / ACCENTCL_CHECKPOINT_REVISION
+        / ACCENTCL_CHECKPOINT
+    )
+    if verified(legacy_snapshot):
+        if progress_callback:
+            progress_callback("Reusing the old Hub cache after exact size and SHA-256 verification.")
+        return str(legacy_snapshot)
+    if legacy_repo_cache.exists():
+        if progress_callback:
+            progress_callback("Removing an incomplete checkpoint from the previous Hub cache layout...")
+        shutil.rmtree(legacy_repo_cache, ignore_errors=True)
+
     def remove_incomplete_files(candidate: Path | None = None) -> None:
         # unlink() removes a symlink itself, not the target it points to.
         for path in {expected_path, candidate}:
@@ -545,10 +566,10 @@ def load_accentcl_model(
     device: str = "cuda",
     progress_callback: Callable[[str], None] | None = None,
 ):
-    """Download pinned model source and load weights using PyTorch safe mode only."""
+    """Download pinned model assets and load only after checkpoint integrity verification."""
     import gc
     import torch
-    from huggingface_hub import hf_hub_download, snapshot_download
+    from huggingface_hub import snapshot_download
 
     if progress_callback:
         progress_callback("Preparing pinned AccentCL source code...")
