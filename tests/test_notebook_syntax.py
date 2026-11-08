@@ -259,3 +259,52 @@ def test_gradio_ui_has_no_login_authentication():
     assert "AUTH_PASSWORD" not in ui
     assert "auth=(" not in ui
     assert "authentication is disabled" in all_text
+
+
+def test_spoiler_free_accent_analysis_is_wired_into_notebook_ui():
+    notebook = load_notebook()
+    sources = code_sources(notebook)
+    batch = sources[5]
+    ui = sources[6]
+    all_text = "\n".join(
+        "".join(cell.get("source", []))
+        for cell in notebook["cells"]
+    )
+
+    assert "ACCENT_ANALYSIS_HELPER_COMMIT" in batch
+    assert "load_accentcl_model(" in batch
+    assert "weights_only=True" not in batch  # safe loading lives in the pinned helper
+    assert "def run_accent_analysis(" in batch
+    assert "ChatterboxMultilingualTTS.from_local(" in batch
+    assert "def list_saved_accent_audio_choices(" in batch
+    assert 'with gr.Tab("Accent Check")' in ui
+    assert 'file_types=[".wav", ".mp3"]' in ui
+    assert "Analyze accent without transcription" in ui
+    assert "accent_segments_output" in ui
+    assert "accent_json_output" in ui and "accent_csv_output" in ui
+    assert 'max_file_size="2gb"' in ui
+    assert "No transcription is performed" in all_text
+    assert "sentence text" in all_text.lower()
+
+
+def test_accent_analysis_ui_event_input_and_output_arities_match_callback():
+    notebook = load_notebook()
+    sources = code_sources(notebook)
+    batch_tree = ast.parse(sources[5])
+    ui_tree = ast.parse(sources[6])
+    callback = next(
+        node for node in batch_tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "run_accent_analysis"
+    )
+    analyse_click = next(
+        node for node in ast.walk(ui_tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "click"
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "accent_analyse_button"
+    )
+    inputs = next(keyword.value for keyword in analyse_click.keywords if keyword.arg == "inputs")
+    outputs = next(keyword.value for keyword in analyse_click.keywords if keyword.arg == "outputs")
+    assert isinstance(inputs, ast.List) and len(inputs.elts) == len(callback.args.args) - 1
+    assert isinstance(outputs, ast.List) and len(outputs.elts) == 4
