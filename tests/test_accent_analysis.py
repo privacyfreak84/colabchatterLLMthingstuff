@@ -212,4 +212,7 @@ def test_accent_model_loader_is_pinned_and_uses_safe_torch_loading():
     assert len(accent.ACCENTCL_COMMIT) == 40
     assert "weights_only=True" in source
     assert "weights_only=False" not in source
+    assert "snapshot_download" in source
+    assert "openai/whisper-large-v3" in source
+    assert "model_name=str(whisper_path)" in source
     assert "torch.load" in source
