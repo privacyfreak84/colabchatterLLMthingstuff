@@ -38,6 +38,7 @@ The audiobook is **not complete** merely because synthesis finished. Completion 
 - A small representative narration test approved for voice, intelligibility, pace, and sound quality.
 - Full-book chunk coverage reconciled against the approved manuscript.
 - Automated checks for missing/duplicate chunks, unexpected durations, silence, clipping, malformed audio, and discontinuities.
+- Optional timestamped regional-accent consistency report for WAV/MP3 masters, with no transcript output; use as a listening triage aid, not as proof of pronunciation quality.
 - Human listening review of chapter openings, endings, joins, all flagged chunks, and a representative sample throughout the book.
 - Final assembly and playback verification of the complete master and chapter files.
 
