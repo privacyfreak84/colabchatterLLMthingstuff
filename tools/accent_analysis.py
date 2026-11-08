@@ -19,7 +19,11 @@ ACCENTCL_REPO_URL = "https://github.com/PSI-TAMU/AccentCL.git"
 ACCENTCL_COMMIT = "a37811a5b772b1056cd90d44666585e35aedd657"
 ACCENTCL_MODEL_REPO = "Morris88826/accentcl"
 ACCENTCL_CHECKPOINT = "accentcl_spanish_chinese.pt"
-ACCENTCL_MIN_CHECKPOINT_BYTES = 1_000_000_000
+# The checkpoint is pinned to the immutable Hugging Face commit that uploaded it.
+# Its Git-LFS pointer publishes both the exact byte size and SHA-256.
+ACCENTCL_CHECKPOINT_REVISION = "af925d811ff95be41a2cacc3988cd3df410e762f"
+ACCENTCL_CHECKPOINT_SIZE_BYTES = 2_563_884_656
+ACCENTCL_CHECKPOINT_SHA256 = "f4db857f696323d8a6c71073fff734c81dee33267a393b50c795f12ca9f86c93"
 ACCENTCL_MODEL_NAME = "AccentCL with Whisper Large v3, seven regional English categories"
 
 DISPLAY_LABELS = {
@@ -396,6 +400,47 @@ def write_accent_report(report: dict, output_dir: str | Path) -> tuple[str, str]
     return str(json_path), str(csv_path)
 
 
+def load_verified_accent_checkpoint(checkpoint_path: str | Path, *, torch_module=None):
+    """Load the official legacy checkpoint only after exact size/SHA-256 verification.
+
+    AccentCL's published inference loader uses unrestricted pickle loading for this
+    checkpoint. PyTorch's restricted weights-only unpickler fails on this legacy
+    checkpoint serialization. We permit the compatibility load only for the
+    exact immutable Hugging Face artifact pinned above, verified byte-for-byte
+    against its published Git-LFS SHA-256.
+    """
+    if torch_module is None:
+        import torch as torch_module
+
+    path = Path(checkpoint_path)
+    if not path.is_file():
+        raise FileNotFoundError(f"AccentCL checkpoint does not exist: {path}")
+
+    actual_size = path.stat().st_size
+    if actual_size != ACCENTCL_CHECKPOINT_SIZE_BYTES:
+        raise RuntimeError(
+            "AccentCL checkpoint size does not match the pinned official artifact: "
+            f"expected {ACCENTCL_CHECKPOINT_SIZE_BYTES:,} bytes, got {actual_size:,}. "
+            "Refusing to deserialize it."
+        )
+
+    actual_sha256 = sha256_file(path)
+    if actual_sha256.lower() != ACCENTCL_CHECKPOINT_SHA256:
+        raise RuntimeError(
+            "AccentCL checkpoint SHA-256 verification failed. "
+            "Refusing to use unrestricted pickle deserialization."
+        )
+
+    # This is deliberately weights_only=False: the exact official checkpoint was
+    # saved in the legacy format used by AccentCL's own from_checkpoint() loader.
+    # The immutable revision + Git-LFS digest check above must remain in place.
+    return torch_module.load(
+        str(path),
+        map_location="cpu",
+        weights_only=False,
+    )
+
+
 def load_accentcl_model(
     *,
     cache_dir: str | Path,
@@ -447,10 +492,14 @@ def load_accentcl_model(
     checkpoint_path = hf_hub_download(
         repo_id=ACCENTCL_MODEL_REPO,
         filename=ACCENTCL_CHECKPOINT,
+        revision=ACCENTCL_CHECKPOINT_REVISION,
         cache_dir=str(cache_path),
     )
-    if Path(checkpoint_path).stat().st_size < ACCENTCL_MIN_CHECKPOINT_BYTES:
-        raise RuntimeError("Downloaded AccentCL checkpoint is unexpectedly small or incomplete.")
+    if Path(checkpoint_path).stat().st_size != ACCENTCL_CHECKPOINT_SIZE_BYTES:
+        raise RuntimeError(
+            "Downloaded AccentCL checkpoint has the wrong size. "
+            "Delete the incomplete cached checkpoint and retry."
+        )
 
     if progress_callback:
         progress_callback("Downloading Whisper Large v3 files if they are not cached...")
@@ -475,8 +524,9 @@ def load_accentcl_model(
 
     if progress_callback:
         progress_callback("Loading Whisper Large v3 and the accent classifier...")
-    checkpoint = torch.load(
-        checkpoint_path, map_location="cpu", weights_only=True,
+    checkpoint = load_verified_accent_checkpoint(
+        checkpoint_path,
+        torch_module=torch,
     )
     label2id = checkpoint.get("label2id")
     state_dict = checkpoint.get("model")
