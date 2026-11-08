@@ -200,7 +200,7 @@ The aligned-splice step needs `pocketsphinx` and `praat-parselmouth`. The runner
 |---|---|
 | `notebooks/01_pdf_reconnaissance.ipynb` | Stage 1: PDF extraction, structure validation, section exports, repair proposals, manuscript approval |
 | `notebooks/02_pronunciation_auditions.ipynb` | Stage 2: pinned Chatterbox V3 setup, smoke tests, pronunciation auditions, bridge tests, narrator retests |
-| `notebooks/03_chatterbox_custom_text_gradio.ipynb` | Chatterbox V3 Gradio app: quick TTS, searchable-PDF/TXT/Markdown ingestion, page ranges and provenance, punctuation-preserving line-wrap cleanup, resumable audiobook jobs, selective rerendering, logs, chapter/whole-book masters, QA and delivery ZIP |
+| `notebooks/03_chatterbox_custom_text_gradio.ipynb` | Chatterbox V3 Gradio app: quick TTS, searchable-PDF/TXT/Markdown ingestion, page ranges and provenance, punctuation-preserving line-wrap cleanup, resumable audiobook jobs, selective rerendering, logs, chapter/whole-book masters, technical QA, transcript-free regional accent checks for WAV/MP3, and delivery ZIP |
 | `tools/manuscript_repair.py` | Builds provenance-aware, reversible repair proposals and a pronunciation inventory draft |
 | `tools/manuscript_approval.py` | Validates the review bundle, creates approved manuscript copies, and prepares source-context pronunciation prompts |
 | `tools/pronunciation_audition.py` | Builds and runs checkpointed English/IAST/Devanagari audition tasks with tokenizer preflight |
@@ -208,6 +208,7 @@ The aligned-splice step needs `pocketsphinx` and `praat-parselmouth`. The runner
 | `tools/narrator_reference.py` | Standard-library WAV checks for a candidate narrator reference |
 | `tools/narrator_retest.py` | Builds and runs narrator-conditioned term tests, splices, manifests, and transfer bundles |
 | `tools/aligned_splice.py` | Forced alignment and pitch/pace/level-matched replacement of a term inside a one-pass English sentence |
+| `tools/accent_analysis.py` | Streaming WAV/MP3 decoding, timestamped AccentCL regional predictions, and transcript-free JSON/CSV reports |
 | `scripts/run_narrator_retest_local.py` | Local CPU/CUDA entry point for narrator retests |
 | `scripts/make_aligned_splices.py` | Builds aligned splices from existing clips without running the model |
 | `docs/local_cpu_setup.md` | Local Fedora/CPU installation and retest instructions |
