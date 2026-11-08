@@ -718,7 +718,12 @@ def create_or_resume_job(
     source_text = normalize_manuscript_text(source_text)
     source_hash = sha256_text(source_text)
     source_pdf_hash = sha256_bytes(source_pdf_bytes) if source_pdf_bytes is not None else None
-    config_json = json.dumps(generation_config, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    config_identity = dict(generation_config)
+    # Helper revisions may add bookkeeping/selection support without changing
+    # the spoken audio recipe. Keep helper_commit in provenance, but exclude it
+    # from the resume identity so existing jobs remain resumable after helper fixes.
+    config_identity.pop("helper_commit", None)
+    config_json = json.dumps(config_identity, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
     config_hash = sha256_text(config_json)
     plan_identity = [
         {
@@ -737,7 +742,15 @@ def create_or_resume_job(
             raise ValueError("This job ID already belongs to different manuscript text. Use a new job ID.")
         if manifest.get("source_pdf_sha256") != source_pdf_hash:
             raise ValueError("This job ID was created from a different source PDF. Use the original PDF or a new job ID.")
-        if manifest.get("generation_config_sha256") != config_hash:
+        saved_config_identity = dict(manifest.get("generation_config", {}))
+        saved_config_identity.pop("helper_commit", None)
+        saved_config_json = json.dumps(
+            saved_config_identity,
+            sort_keys=True,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        if sha256_text(saved_config_json) != config_hash:
             raise ValueError("This job ID has different voice/settings/reference configuration. Use the original settings or a new job ID.")
         if manifest.get("plan_sha256") != plan_hash:
             raise ValueError("The chunk plan differs from the saved job. Use the original chunk settings or a new job ID.")
