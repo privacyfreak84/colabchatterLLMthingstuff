@@ -289,6 +289,8 @@ def test_spoiler_free_accent_analysis_is_wired_into_notebook_ui():
     assert "def run_accent_analysis(" in batch
     assert "ChatterboxMultilingualTTS.from_local(" in batch
     assert "def list_saved_accent_audio_choices(" in batch
+    assert '"*/chunks/*.wav"' in batch
+    assert '"*/assemblies/*.wav"' in batch
     assert 'with gr.Tab("Accent Check")' in ui
     assert 'file_types=[".wav", ".mp3"]' in ui
     assert "Analyze accent without transcription" in ui
@@ -571,6 +573,12 @@ def test_audiobook_saved_playback_and_manual_assembly_ui_callbacks_match():
     assert len(refresh.args.args) == 0
     assert "list_audiobook_audio_choices(" in batch
     assert "longform._safe_relative_path(" in batch
+    assert "def _audiobook_job_sample_rate(" in batch
+    assert 'settings.get("sample_rate", 24000)' in batch
+    assert "sample_rate=int(model.sr)" not in batch[
+        batch.index("def list_audiobook_job_choices("):
+        batch.index("def load_activity_logs(")
+    ]
 
     assemble_click = next(
         node for node in ast.walk(ui_tree)
