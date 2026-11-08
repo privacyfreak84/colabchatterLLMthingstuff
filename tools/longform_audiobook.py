@@ -631,6 +631,42 @@ def verify_chunk_wav(job_dir: str | Path, chunk: dict, sample_rate: int = 24000)
 
 
 
+
+def select_text_paragraph_range(
+    source_text: str,
+    paragraph_start: int = 1,
+    paragraph_end: int | None = 0,
+) -> tuple[str, dict]:
+    """Select a one-based inclusive range of normalized text paragraphs.
+
+    Text formats do not have intrinsic page numbers. Physical line wraps are
+    normalized first, so blank-line paragraph boundaries are the stable units.
+    An end value of 0/None means the final paragraph.
+    """
+    normalized = normalize_manuscript_text(source_text)
+    paragraphs = [
+        item.strip()
+        for item in re.split(r"\n\s*\n", normalized)
+        if item.strip()
+    ]
+    if not paragraphs:
+        raise ValueError("The text contains no paragraphs to select.")
+    start = int(paragraph_start)
+    end = len(paragraphs) if paragraph_end in (None, 0) else int(paragraph_end)
+    if start < 1 or end < start or end > len(paragraphs):
+        raise ValueError(
+            f"Invalid text paragraph range. Choose paragraphs 1 through {len(paragraphs)}; "
+            "end paragraph 0 means the final paragraph."
+        )
+    selected = paragraphs[start - 1:end]
+    return "\n\n".join(selected), {
+        "total_paragraphs": len(paragraphs),
+        "selected_paragraph_start": start,
+        "selected_paragraph_end": end,
+        "selected_paragraph_count": len(selected),
+    }
+
+
 def filter_plan_sections(plan: dict, selected_section_ids: list[str] | None = None) -> dict:
     """Return a plan containing the selected detected sections, in source order.
 
