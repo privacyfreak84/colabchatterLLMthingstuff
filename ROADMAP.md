@@ -98,6 +98,7 @@ The pace-oriented preset (exaggeration=0.7, cfg_weight=0.3) is an experiment inf
 
 - Reconcile every audio chunk against the approved manuscript.
 - Run duration, file-integrity, silence, clipping, discontinuity, duplicate, and missing-chunk checks.
+- Optionally run a spoiler-free regional accent scan over finished WAV/MP3 audio. The standalone notebook implements AccentCL timestamp windows and transcript-free reports; validate its predictions on actual Chatterbox narration before relying on it, and retain human listening review.
 - Listen to chapter transitions, flagged chunks, and representative samples.
 - Assemble chapter masters and the complete audiobook.
 - Export the agreed listening format and verify playback from beginning to end.
