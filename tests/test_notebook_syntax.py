@@ -666,7 +666,7 @@ def test_audiobook_and_accent_helpers_are_pinned_to_current_validated_implementa
     )
 
     expected_audiobook_commit = "90c6070f4520cceee7fe475e16ad3485aee13989"
-    expected_accent_commit = "7325ce585a17f2c7184b7dbce4f86a40f6acac77"
+    expected_accent_commit = "64d57bab6cb889b377dd44eb346bdd98798d942a"
     assert f'AUDIOBOOK_HELPER_COMMIT = "{expected_audiobook_commit}"' in batch
     assert f'ACCENT_ANALYSIS_HELPER_COMMIT = "{expected_accent_commit}"' in batch
 
