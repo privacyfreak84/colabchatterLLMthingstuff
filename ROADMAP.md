@@ -102,7 +102,8 @@ The pace-oriented preset (exaggeration=0.7, cfg_weight=0.3) is an experiment inf
 - Optionally run a spoiler-free regional accent scan over finished WAV/MP3 audio. The standalone notebook implements AccentCL timestamp windows and transcript-free reports; validate its predictions on actual Chatterbox narration before relying on it, and retain human listening review.
 - Use the standalone notebook's chunk/section rerender controls to replace defective portions without regenerating good portions. Replacement is atomic and old WAVs are backed up only when the optional backup setting is enabled.
 - Listen to chapter transitions, flagged chunks, and representative samples.
-- Listen to chapter transitions, flagged chunks, and representative samples.
+- Validate the new Chatterbox accent/identity factorization with a controlled A/B/A repeated-seed pilot and human listening review. The optional accent/style reference must preserve narrator identity as well as the intended American-English pronunciation.
+- Treat regional consistency as unapproved until the pilot passes; the base multilingual English checkpoint has no US/UK locale control.
 - Assemble chapter masters and the complete audiobook.
 - Export the agreed listening format and verify playback from beginning to end.
 
