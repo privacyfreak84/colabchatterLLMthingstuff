@@ -300,6 +300,22 @@ After that smoke test, validate Accent Check on known North American and British
 If the accent persists, test the stand-in renders: `python scripts/run_narrator_retest_local.py --narrator ~/narrator_reference.wav --remaining-terms --routes hybrid --english-standin --aligned-splices` (see docs/local_cpu_setup.md). Per-term choices and spoken forms remain open for the eight terms other than Buddha until the user is satisfied.
 
 Then complete Pass 6: the reversible text-to-spoken-form mapping for all 13 terms, a repeated-term consistency check, and an approved representative narration passage. Pass 7 and full-book synthesis stay locked until those are approved.
+
+## Notebook helper-pin correction, AccentCL checkpoint and manual assembly (2026-11-08)
+
+The first live use of the redesigned notebook exposed two independent stale-helper pins:
+
+- The notebook loaded audiobook helper commit `b7286e8`, which predates `assemble_selected_chunk_wavs()`. The current notebook called that missing API, causing `AttributeError` during manual assembly.
+- The notebook loaded AccentCL helper commit `b632506`, whose checkpoint download was not pinned to the immutable Hugging Face artifact revision and did not verify the published SHA-256. That older loader raised `Downloaded AccentCL checkpoint is unexpectedly small or incomplete.`
+
+**Fix committed:** both notebook helper references now point to immutable repository commit `90c6070f4520cceee7fe475e16ad3485aee13989`. That snapshot contains the manual selected-chunk assembly function and the AccentCL loader with an immutable checkpoint revision, exact expected byte size, and SHA-256 verification. The TTS model itself was not implicated by either traceback.
+
+**Regression coverage:** added a static notebook test that checks both pins and verifies the corresponding helper APIs/checkpoint-verification constants exist in the repository source of truth.
+
+**Not yet verified:** a live Colab rerun of manual assembly and the AccentCL download/scan after reloading the corrected helper cell. The progress bars and PyTorch/diffusers deprecation notices are not the cause of either failure.
+
+**Next action:** reload the updated notebook, rerun its helper-loading cell, then retry assembly from the already-generated chunk WAVs. After that, retry Accent Check; it should now fetch the immutable, hash-checked checkpoint revision. Do not regenerate completed chunks solely to fix these helper-import errors.
+
 ## Decision policy
 
 - Code added is not the same as a completed experiment.
