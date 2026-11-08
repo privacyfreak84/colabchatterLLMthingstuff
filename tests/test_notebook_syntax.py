@@ -665,9 +665,10 @@ def test_audiobook_and_accent_helpers_are_pinned_to_current_validated_implementa
         and "ACCENT_ANALYSIS_HELPER_COMMIT" in source
     )
 
-    expected_commit = "7265c3b692c82785b8b900685096e74b8fcebf54"
-    assert f'AUDIOBOOK_HELPER_COMMIT = "{expected_commit}"' in batch
-    assert f'ACCENT_ANALYSIS_HELPER_COMMIT = "{expected_commit}"' in batch
+    expected_audiobook_commit = "90c6070f4520cceee7fe475e16ad3485aee13989"
+    expected_accent_commit = "7325ce585a17f2c7184b7dbce4f86a40f6acac77"
+    assert f'AUDIOBOOK_HELPER_COMMIT = "{expected_audiobook_commit}"' in batch
+    assert f'ACCENT_ANALYSIS_HELPER_COMMIT = "{expected_accent_commit}"' in batch
 
     # The local source-of-truth helpers must contain the APIs and verification
     # used by those immutable notebook pins.
