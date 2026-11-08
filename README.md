@@ -132,7 +132,7 @@ The immediate checkpoint recorded in [PROJECT_STATUS.md](PROJECT_STATUS.md) is t
 
 ### Latest automated test result
 
-GitHub Actions on commit `70cc6a4e8f610237c4581308a9e5b971f6ac199d` passed **172 tests** (workflow run [144](https://github.com/privacyfreak84/colabchatterLLMthingstuff/actions/runs/42469206864), 2026-11-08). The suite covers PDF page-range extraction, TXT paragraph selection, section filtering, full/selected master assembly, atomic rerender and optional backup behaviour, legacy-job resume compatibility, WAV/MP3 accent analysis, and notebook wiring. CI does **not** run a live Colab TTS job, evaluate the accent classifier on Chatterbox speech, or prove that the full audiobook has been quality-checked.
+GitHub Actions on commit `481d898ba827457f6d0b9f93b486d5cd8a29e5dd` passed **175 tests** (workflow run [151](https://github.com/privacyfreak84/colabchatterLLMthingstuff/actions/runs/42471364444), 2026-11-08). The suite covers PDF page-range extraction, TXT paragraph selection, section filtering, full/selected master assembly, atomic rerender and optional backup behaviour, legacy-job resume compatibility, custom output-name validation and file naming, WAV/MP3 accent analysis, and notebook wiring. CI does **not** run a live Colab TTS job, evaluate the accent classifier on Chatterbox speech, or prove that the full audiobook has been quality-checked.
 
 ---
 
