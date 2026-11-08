@@ -1,6 +1,6 @@
 # Project status
 
-**Last updated:** 2026-10-31  
+**Last updated:** 2026-11-08  
 **Current pass:** Pass 6: narrator voice and HYBRID route approved by the user (2026-10-31); spoken-form mapping for the remaining nine terms pending  
 **Merged to:** main via PR #9, merge commit 047ac7f40e6e539da13d7b3fcf1d5381ada9b175  
 **Full-book synthesis:** LOCKED
@@ -167,6 +167,16 @@ nextrecon7.txt: 45 new clips (nine terms, HYBRID plus a plain-English control se
 **Fix built (aligned splicing):** instead of three separate renders, take the single-pass English sentence, locate the English term word with forced alignment (pocketsphinx), and swap in the HYBRID term clip after matching its pitch (within +/-4 semitones), pace (0.75-1.25x) and level (+/-4 dB) to the English word it replaces, with 12 ms crossfades. Measured on the nextrecon7 clips: silence before the term fell from 140-340 ms to 0-60 ms (samsara 120 ms), and term pace follows the English word (Subhuti 0.47 -> 0.23 s per syllable). Silences after the term are the narrator's own comma pauses. Not yet judged by ear.
 
 **Accent, not fixed by splicing:** a stand-in option renders the sentence with a plain English word in the term's slot (Alexandria, Montana, Mediterranean manuscript, Emily, Alabama, banana, Sahara, chapter), so a Sanskrit spelling in the text cannot cue the accent; the HYBRID term is swapped in afterwards. This is a hypothesis to test, not an established cause. The aligned-splice report is saved as aligned_splices_report.json in the run folder.
+
+## Standalone custom-text notebook extension (2026-11-08)
+
+The third notebook now has an optional **Accent Check** tab. It uses the open-source AccentCL regional English accent classifier over overlapping 15-second windows with a 10-second hop. It accepts saved audiobook WAV masters/sections or uploaded WAV/MP3 files, streams decoding through FFmpeg, and writes timestamped JSON/CSV reports without speech transcription or sentence text. The UI temporarily unloads Chatterbox to free GPU memory and reloads it after the scan.
+
+- New helper: \`tools/accent_analysis.py\`; pinned upstream AccentCL source commit \`a37811a5b772b1056cd90d44666585e35aedd657\`.
+- Model: AccentCL seven-class checkpoint, with Whisper Large v3. First use requires multi-gigabyte downloads; GPU strongly recommended.
+- CPU-side CI: **160 passed** on commit \`be19176eedd45bb348f36340f3059c0a08a6f4ce\`, workflow run [113](https://github.com/privacyfreak84/colabchatterLLMthingstuff/actions/runs/42462049087).
+- Not yet tested: downloading/loading the actual AccentCL checkpoint in Colab, running GPU inference, or evaluating how accurately it classifies this user's Chatterbox narrator. The published benchmark is not a guarantee on synthetic speech.
+- This is a broad regional triage aid, not phoneme-level pronunciation QA. Scores are uncalibrated, and human spot-checking remains the authority. This extension does not change the document approval gate or authorize full-book synthesis.
 
 ## Immediate next action
 
