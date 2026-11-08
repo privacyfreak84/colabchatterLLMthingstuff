@@ -630,6 +630,73 @@ def verify_chunk_wav(job_dir: str | Path, chunk: dict, sample_rate: int = 24000)
         return False
 
 
+
+def filter_plan_sections(plan: dict, selected_section_ids: list[str] | None = None) -> dict:
+    """Return a plan containing the selected detected sections, in source order.
+
+    An empty selection means all sections. Chunk IDs are renumbered contiguously
+    so each selected-section job has a compact, self-contained manifest.
+    """
+    all_sections = list(plan.get("sections", []))
+    all_section_ids = [str(item["section_id"]).upper() for item in all_sections]
+    requested = list(dict.fromkeys(
+        str(value).strip().upper()
+        for value in (selected_section_ids or [])
+        if str(value).strip()
+    ))
+    unknown = [section_id for section_id in requested if section_id not in all_section_ids]
+    if unknown:
+        raise ValueError("Unknown section ID(s): " + ", ".join(unknown))
+
+    chosen_ids = set(requested) if requested else set(all_section_ids)
+    selected_sections = [
+        dict(section) for section in all_sections
+        if str(section["section_id"]).upper() in chosen_ids
+    ]
+    if not selected_sections:
+        raise ValueError("No sections were selected.")
+
+    old_chunks = {
+        str(item["chunk_id"]).upper(): item
+        for item in plan.get("chunks", [])
+    }
+    selected_chunks = []
+    new_sections = []
+    for section in selected_sections:
+        new_chunk_ids = []
+        for old_chunk_id in section.get("chunk_ids", []):
+            old = old_chunks.get(str(old_chunk_id).upper())
+            if old is None:
+                raise ValueError(f"Section {section['section_id']} references missing chunk {old_chunk_id}.")
+            chunk = dict(old)
+            new_index = len(selected_chunks) + 1
+            new_id = f"C{new_index:05d}"
+            chunk["chunk_id"] = new_id
+            chunk["chunk_index"] = new_index
+            selected_chunks.append(chunk)
+            new_chunk_ids.append(new_id)
+        section["chunk_ids"] = new_chunk_ids
+        if new_chunk_ids:
+            new_sections.append(section)
+
+    if not selected_chunks:
+        raise ValueError("The selected sections contain no speakable text.")
+    selected_chunks[-1]["boundary_after"] = "end"
+    selected_chunks[-1]["pause_after_seconds"] = 0.0
+
+    result = dict(plan)
+    result.update({
+        "sections": new_sections,
+        "chunks": selected_chunks,
+        "chunk_count": len(selected_chunks),
+        "section_count": len(new_sections),
+        "all_section_count": int(plan.get("all_section_count", len(all_sections))),
+        "selected_section_ids": [item["section_id"] for item in new_sections],
+        "selection_mode": "all" if len(new_sections) == len(all_sections) else "selected_sections",
+    })
+    return result
+
+
 def create_or_resume_job(
     jobs_root: str | Path,
     job_id: str | None,
@@ -839,12 +906,23 @@ def assemble_job_masters(job_dir: str | Path, manifest: dict, sample_rate: int =
         for index, (path, item) in enumerate(zip(paths, section_chunks)):
             full_paths.append(path)
             full_pauses.append(float(item["pause_after_seconds"]))
-    master_path = root / "whole_book_master.wav"
+    plan_info = manifest.get("plan", {})
+    selected_ids = plan_info.get("selected_section_ids") or []
+    all_section_count = int(plan_info.get("all_section_count", len(manifest["sections"])))
+    is_full_selection = (
+        not selected_ids
+        or len(selected_ids) == all_section_count
+        or plan_info.get("selection_mode") == "all"
+    )
+    master_filename = "whole_book_master.wav" if is_full_selection else "selected_sections_master.wav"
+    master_path = root / master_filename
     master_info = assemble_wav(full_paths, full_pauses, master_path, sample_rate=sample_rate)
     artifacts = {
         "whole_book_master": {
             "relpath": str(master_path.relative_to(root)),
             "audio": master_info,
+            "is_full_source": is_full_selection,
+            "selected_section_ids": [item["section_id"] for item in manifest["sections"]],
         },
         "section_masters": sections_out,
     }
@@ -861,9 +939,20 @@ def force_rerender_chunks(
     chunk_ids: list[str],
     *,
     new_random_seed: bool = True,
+    preserve_previous: bool = False,
 ) -> list[str]:
-    """Invalidate selected completed chunks while preserving their prior WAV revisions."""
-    requested = list(dict.fromkeys(str(value).strip().upper() for value in chunk_ids if str(value).strip()))
+    """Queue chosen chunks; a successful new WAV atomically replaces the active file.
+
+    By default the old WAV is left at its active path until the replacement has
+    been synthesized and atomically installed. If synthesis fails, the previous
+    valid file can therefore remain usable. Optional backups are copied (never
+    moved) into revisions/ before generation starts.
+    """
+    requested = list(dict.fromkeys(
+        str(value).strip().upper()
+        for value in chunk_ids
+        if str(value).strip()
+    ))
     if not requested:
         return []
     known = {item["chunk_id"].upper(): item for item in manifest.get("chunks", [])}
@@ -876,43 +965,54 @@ def force_rerender_chunks(
     rerendered = []
     for chunk_id in requested:
         chunk = known[chunk_id]
+        if chunk.get("pending_replacement"):
+            raise ValueError(f"{chunk_id} already has a replacement queued; resume that job first.")
+
         old_seed = int(chunk["seed"])
         old_path = _safe_relative_path(root, chunk["wav_relpath"])
-        previous_renders = chunk.setdefault("previous_renders", [])
-
+        pending = None
         if old_path.is_file():
             old_hash = sha256_file(old_path)
-            revision_number = len(previous_renders) + 1
-            revision_name = f"{chunk_id.lower()}_rev{revision_number:02d}_seed{old_seed}.wav"
-            revision_path = revisions_dir / revision_name
-            revisions_dir.mkdir(parents=True, exist_ok=True)
-            os.replace(old_path, revision_path)
-            previous_renders.append({
-                "revision": revision_number,
-                "seed": old_seed,
-                "wav_sha256": old_hash,
-                "duration_seconds": chunk.get("duration_seconds"),
-                "relpath": str(revision_path.relative_to(root)),
-                "preserved_at_utc": utc_now(),
-                "was_verified_complete": bool(
-                    chunk.get("status") == "complete"
-                    and chunk.get("wav_sha256") == old_hash
-                ),
-            })
+            pending = {
+                key: chunk.get(key)
+                for key in (
+                    "seed", "status", "wav_sha256", "duration_seconds",
+                    "elapsed_seconds", "peak_before_limiter", "limiter_gain",
+                    "completed_at_utc", "device",
+                )
+            }
+            pending["seed"] = old_seed
+            pending["wav_sha256"] = old_hash
+            pending["was_verified_complete"] = bool(
+                chunk.get("status") == "complete"
+                and chunk.get("wav_sha256") == old_hash
+            )
+            if preserve_previous:
+                previous_renders = chunk.setdefault("previous_renders", [])
+                revision_number = len(previous_renders) + 1
+                revision_name = f"{chunk_id.lower()}_rev{revision_number:02d}_seed{old_seed}.wav"
+                revision_path = revisions_dir / revision_name
+                revisions_dir.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(old_path, revision_path)
+                previous_renders.append({
+                    "revision": revision_number,
+                    "seed": old_seed,
+                    "wav_sha256": old_hash,
+                    "duration_seconds": chunk.get("duration_seconds"),
+                    "relpath": str(revision_path.relative_to(root)),
+                    "preserved_at_utc": utc_now(),
+                    "was_verified_complete": pending["was_verified_complete"],
+                })
+            chunk["pending_replacement"] = pending
 
         if new_random_seed:
             chunk.setdefault("seed_history", []).append(old_seed)
             chunk["seed"] = secrets.randbelow(2**31 - 1)
         chunk["status"] = "pending"
         for key in (
-            "wav_sha256",
-            "duration_seconds",
-            "elapsed_seconds",
-            "peak_before_limiter",
-            "limiter_gain",
-            "completed_at_utc",
-            "device",
-            "error",
+            "wav_sha256", "duration_seconds", "elapsed_seconds",
+            "peak_before_limiter", "limiter_gain", "completed_at_utc",
+            "device", "error", "last_rerender_error",
         ):
             chunk.pop(key, None)
         rerendered.append(chunk_id)
@@ -922,13 +1022,18 @@ def force_rerender_chunks(
         "timestamp_utc": utc_now(),
         "chunk_ids": rerendered,
         "new_random_seed": bool(new_random_seed),
+        "preserve_previous": bool(preserve_previous),
     })
     write_manifest(root, manifest)
     append_job_event(
         root,
         "chunks_queued_for_rerender",
-        "Queued selected chunks for a new render; any prior WAVs were preserved under revisions/.",
-        details={"chunk_ids": rerendered, "new_random_seed": bool(new_random_seed)},
+        "Queued selected chunks; the new WAV atomically replaces the active file after successful synthesis.",
+        details={
+            "chunk_ids": rerendered,
+            "new_random_seed": bool(new_random_seed),
+            "preserve_previous": bool(preserve_previous),
+        },
     )
     return rerendered
 
@@ -1042,8 +1147,16 @@ def create_job_bundle(job_dir: str | Path) -> Path:
     bundle = root / "audiobook_delivery_bundle.zip"
     temporary = bundle.with_suffix(".zip.partial")
     with zipfile.ZipFile(temporary, "w", compression=zipfile.ZIP_STORED, allowZip64=True) as archive:
-        for relative in ["source.txt", "source_original.pdf", "manifest.json", "events.jsonl", "job.log", "whole_book_master.wav", "qa_report.json"]:
-            path = root / relative
+        master_relative = (
+            manifest.get("artifacts", {}).get("whole_book_master", {}).get("relpath")
+            or "whole_book_master.wav"
+        )
+        base_files = [
+            "source.txt", "source_original.pdf", "manifest.json",
+            "events.jsonl", "job.log", master_relative, "qa_report.json",
+        ]
+        for relative in base_files:
+            path = _safe_relative_path(root, relative)
             if path.is_file():
                 archive.write(path, arcname=relative)
         for folder_name in ("chunks", "sections", "revisions"):
