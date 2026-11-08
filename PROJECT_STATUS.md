@@ -253,9 +253,47 @@ New helper: `tools/speech_rate.py`. It uses FFmpeg's `atempo` WSOLA filter on th
 **Not yet verified:** reloading the updated notebook in Colab, downloading/verifying/loading the AccentCL checkpoint on the Colab runtime, scanning a reference accent clip, and listening to a representative page rendered at 0.85x and another chosen rate. The speech-rate DSP may still create content-dependent artefacts, so a short human-audited pilot is required before a long batch.
 
 
+
+## Audiobook workspace redesign, playback history and manual master assembly (2026-11-08)
+
+### Interface redesign
+
+The third notebook's former single crowded Audiobook Jobs form has been replaced by two tabs:
+
+- **Create / Resume:** five collapsible steps group the source/range, preview and section selection, narrator/accent guide/pace, advanced voice settings, and job identity/repair controls.
+- **Listen & Assemble:** select a saved Job ID, browse every valid WAV inside that job, load a prior WAV into a player, or assemble selected chunks / all completed chunks.
+
+The generation screen now includes a **Latest spoken chunk** audio player. It updates as each new chunk finishes and is initialized with the final valid chunk already in the saved job when resuming an otherwise-complete job.
+
+The saved WAV browser includes chunk files, replacement backups, manually assembled files, and legacy section/master files from older jobs. The browser is intentionally scoped to the selected Job ID so audio from separate books is not mixed. Drive persistence is required if saved audio must survive a Colab runtime reset.
+
+### No automatic master WAV
+
+New audiobook jobs no longer call the old automatic master-assembly step and no longer create combined whole-book or per-section master WAVs during generation. Chunk WAVs remain the primary synthesis artifacts. Technical QA, manifest, logs, and delivery ZIP are still produced after generation completes.
+
+The old helper remains in the repository for backward compatibility/testing, but the new notebook generation callback does not invoke it. Existing legacy masters are not deleted; the playback browser can still find them.
+
+### User-controlled master assembly
+
+New helper: tools/longform_audiobook.py, function assemble_selected_chunk_wavs.
+
+- The user selects one or more completed chunk WAVs, or checks **Use all completed chunks in this job**.
+- Selection is resolved against manifest order, not the order the user clicked the multi-select list.
+- Every selected WAV must be a complete, hash-valid, mono file at the expected sample rate. Unknown, missing, modified, or incomplete WAVs are rejected.
+- Recorded chunk/paragraph pauses are preserved between the selected chunks.
+- Output WAVs are stored in assemblies/, with source chunk IDs, selected/all mode, duration, hash, and creation timestamp recorded in the manifest.
+- Assemblies are included in a refreshed delivery ZIP for completed jobs. For an unfinished/paused job, the selected WAV is still saved and playable; a complete delivery ZIP is generated only after the job itself is complete.
+- The saved-audio browser discovers the newly created assembly so it can be played again later.
+
+### Verification
+
+GitHub Actions workflow [205](https://github.com/privacyfreak84/colabchatterLLMthingstuff/actions/runs/42500762352) passed **199 tests** on commit c7ad63071a2fc0458bef4ea0c146cc351acda633. The suite covers selected/all assembly, source order, invalid/unknown WAV rejection, ZIP inclusion, notebook syntax, generator output arity, current/previous audio playback wiring, and UI callback/input wiring.
+
+**Not yet tested in live Colab:** the rebuilt Gradio layout in a running session, playback of a freshly generated chunk, browsing previous job audio after a runtime reset with Drive enabled, assembling a subset and all completed chunks, or listening to the resulting master WAV. CI uses synthetic WAVs and static notebook checks, not real Chatterbox narration.
+
 ## Immediate next action
 
-**Single next action:** validate the updated third notebook in Colab with two short smoke tests before any long audiobook batch: (1) run Accent Check on a known North American or British English clip to confirm the pinned checkpoint downloads, passes its size/SHA-256 check, loads and produces a report; (2) render one reviewed representative page at **0.85x**, then a short comparison at **1.00x** or **0.80x**, and listen for natural phrasing, pitch stability, joins, and time-stretch artefacts. Use a new Job ID when changing the speed. If both pass, continue with the controlled Chatterbox accent-factorization pilot below. Do not approve the regional accent intervention or authorize full-book synthesis from CI results alone.
+**Single next action:** open the updated third notebook in Colab and smoke-test the redesigned audiobook workspace with a short reviewed page: confirm the latest chunk player updates, use Listen & Assemble to play a saved chunk, assemble two selected chunks, then assemble all completed chunks and listen for order, pauses, and audio artefacts. Use Drive persistence if checking audio history after a runtime reset. In the same session, run Accent Check on a known North American or British English clip and render a short comparison at **0.85x** and **1.00x**. Do not start a long audiobook batch until these live checks pass.
 
 After that smoke test, validate Accent Check on known North American and British Isles clips plus one narrator retest clip. Then return to the existing Pass 6 listening checkpoint: build/listen to the aligned splices (eight files, built from the existing nextrecon7 clips, no model needed: `python scripts/make_aligned_splices.py --retest-dir ~/audiobook-narrator-retest/v3-narrator-retest --base full`) and judge pauses, stretched words, pitch, pace, and remaining accent drift.
 
