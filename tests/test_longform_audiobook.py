@@ -21,6 +21,7 @@ from tools.longform_audiobook import (
     read_log_tail,
     read_manifest,
     safe_job_id,
+    safe_output_name,
     verify_chunk_wav,
     write_manifest,
 )
@@ -778,6 +779,96 @@ def test_selected_sections_assemble_into_a_named_combined_master_and_bundle(tmp_
     with zipfile.ZipFile(bundle) as archive:
         assert "selected_sections_master.wav" in archive.namelist()
         assert "whole_book_master.wav" not in archive.namelist()
+
+
+def test_safe_output_name_rejects_paths_and_reserved_filenames():
+    assert safe_output_name("Buddhist Yoga") == "Buddhist Yoga"
+    assert safe_output_name("  ") is None
+    for invalid in ("../escape", "folder/name", r"folder\\name", "bad:name", "CON", "LPT1.wav", "name."):
+        try:
+            safe_output_name(invalid)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"unsafe output name accepted: {invalid}")
+
+
+def test_custom_output_name_prefixes_chunks_sections_master_and_bundle(tmp_path):
+    from tools.longform_audiobook import sha256_file
+
+    source = (
+        "Chapter One\\n\\nFirst chapter sentence.\\n\\n"
+        "Chapter Two\\n\\nSecond chapter sentence."
+    )
+    plan = plan_audiobook_chunks(source)
+    root, manifest, resumed = create_or_resume_job(
+        tmp_path,
+        "custom-output",
+        source_text=source,
+        source_name="book.txt",
+        plan=plan,
+        generation_config={"voice": "test"},
+        base_seed=19,
+        output_name="Buddhist Yoga",
+    )
+    assert not resumed
+    assert manifest["output_name"] == "Buddhist Yoga"
+    for chunk in manifest["chunks"]:
+        assert Path(chunk["wav_relpath"]).name.startswith("Buddhist Yoga_c")
+        wav_path = root / chunk["wav_relpath"]
+        wav_path.parent.mkdir(parents=True, exist_ok=True)
+        sf.write(wav_path, np.full(2400, 0.05, dtype=np.float32), 24000, subtype="PCM_16")
+        chunk.update({
+            "status": "complete",
+            "wav_sha256": sha256_file(wav_path),
+            "duration_seconds": 0.1,
+        })
+    write_manifest(root, manifest)
+
+    artifacts = assemble_job_masters(root, manifest)
+    assert all(
+        Path(item["relpath"]).name.startswith("Buddhist Yoga_s")
+        for item in artifacts["section_masters"]
+    )
+    master_path = root / artifacts["whole_book_master"]["relpath"]
+    assert master_path.name == "Buddhist Yoga_whole_book_master.wav"
+
+    bundle = create_job_bundle(root)
+    assert bundle.name == "Buddhist Yoga_audiobook_delivery_bundle.zip"
+    with zipfile.ZipFile(bundle) as archive:
+        names = set(archive.namelist())
+    assert master_path.name in names
+    assert any(name.startswith("chunks/Buddhist Yoga_c") for name in names)
+    assert any(name.startswith("sections/Buddhist Yoga_s") for name in names)
+
+    _, resumed_manifest, resumed = create_or_resume_job(
+        tmp_path,
+        "custom-output",
+        source_text=source,
+        source_name="book.txt",
+        plan=plan,
+        generation_config={"voice": "test"},
+        base_seed=19,
+        output_name=None,
+    )
+    assert resumed
+    assert resumed_manifest["output_name"] == "Buddhist Yoga"
+
+    try:
+        create_or_resume_job(
+            tmp_path,
+            "custom-output",
+            source_text=source,
+            source_name="book.txt",
+            plan=plan,
+            generation_config={"voice": "test"},
+            base_seed=19,
+            output_name="Different Name",
+        )
+    except ValueError as exc:
+        assert "different custom output name" in str(exc)
+    else:
+        raise AssertionError("a resumed job must not silently change its output filenames")
 
 
 def test_text_paragraph_range_selects_one_based_inclusive_paragraphs_after_reflow():
