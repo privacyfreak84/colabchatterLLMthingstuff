@@ -208,6 +208,8 @@ def test_pdf_ingestion_and_wrapped_line_reflow_are_wired_into_audiobook_ui():
     assert "longform.extract_pdf_manuscript(" in batch
     assert "longform.normalize_manuscript_text(" in batch
     assert "pdf_page_start" in batch and "pdf_page_end" in batch
+    assert "text_paragraph_start" in batch and "text_paragraph_end" in batch
+    assert "longform.select_text_paragraph_range(" in batch
     assert "source_pages=source_pages" in batch
     assert "source_pdf_bytes=source_pdf_bytes" in batch
     assert "pdf_extraction_report=ingestion_report" in batch
@@ -228,7 +230,7 @@ def test_preview_callback_returns_plan_and_cleaned_text_preview():
         node for node in batch_tree.body
         if isinstance(node, ast.FunctionDef) and node.name == "preview_audiobook_plan"
     )
-    assert len(preview_function.args.args) == 10
+    assert len(preview_function.args.args) == 12
 
     ui_tree = ast.parse(ui_source)
     preview_click = next(
@@ -375,3 +377,16 @@ def test_section_selection_generator_and_preview_ui_arities_match():
     assert isinstance(preview_outputs, ast.List)
     assert len(preview_inputs.elts) == len(preview.args.args)
     assert len(preview_outputs.elts) == 3
+
+
+def test_non_pdf_inputs_expose_paragraph_range_controls():
+    notebook = load_notebook()
+    sources = code_sources(notebook)
+    batch = sources[5]
+    ui = sources[6]
+    assert "text_paragraph_start_input" in ui
+    assert "text_paragraph_end_input" in ui
+    assert "select_text_paragraph_range(" in batch
+    assert "selected_paragraph_start" in batch
+    assert "selected_paragraph_end" in batch
+    assert "TXT/Markdown/pasted text has no inherent page numbers" in batch
