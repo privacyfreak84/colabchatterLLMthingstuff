@@ -192,7 +192,7 @@ def test_audiobook_generator_yields_match_all_nine_gradio_outputs():
     assert len(preview_inputs.elts) == len(preview_function.args.args)
     preview_outputs = next(keyword.value for keyword in preview_click.keywords if keyword.arg == "outputs")
     assert isinstance(preview_outputs, ast.List)
-    assert len(preview_outputs.elts) == 2
+    assert len(preview_outputs.elts) == 3
 
 
 def test_pdf_ingestion_and_wrapped_line_reflow_are_wired_into_audiobook_ui():
