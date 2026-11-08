@@ -429,10 +429,12 @@ def test_accent_factorization_patch_is_pinned_and_wired_into_audiobook_jobs():
     batch = sources[5]
     ui = sources[6]
 
-    assert "ACCENT_FACTORIZATION_PATCH_COMMIT = \"85bab9a56c7fae2768ea06090e7d47e532372c94\"" in setup
+    assert "ACCENT_FACTORIZATION_PATCH_COMMIT = \"dd97c3241b603b142b86a92bfcfdfd45f4ecf4c8\"" in setup
     assert "install_chatterbox_accent_factorization(" in setup and "    ChatterboxMultilingualTTS" in setup
     assert "accent_prompt_path=" in batch
     assert "uploaded_accent_reference: str | None" in batch
+    assert "accent_prompt_start_seconds" in batch
+    assert "batch_accent_prompt_start_seconds_input" in ui
     assert "accent_reference_source_sha256" in batch
     assert "accent_reference_mode" in batch
     assert "batch_accent_reference_audio_input = gr.Audio(" in ui
