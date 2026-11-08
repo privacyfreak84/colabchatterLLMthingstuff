@@ -670,6 +670,74 @@ def test_existing_job_remains_resumable_across_helper_commit_updates(tmp_path):
     assert updated_manifest["job_id"] == root.name
 
 
+def test_legacy_full_source_job_resumes_with_new_default_selection_metadata(tmp_path):
+    source = (
+        "Chapter 1\n\nFirst chapter sentence.\n\n"
+        "Chapter 2\n\nSecond chapter sentence."
+    )
+    plan = plan_audiobook_chunks(source)
+    root, _, resumed = create_or_resume_job(
+        tmp_path, "legacy-default-selection",
+        source_text=source,
+        source_name="book.txt",
+        plan=plan,
+        generation_config={"voice": "test"},
+        base_seed=7,
+    )
+    assert not resumed
+
+    _, manifest, resumed = create_or_resume_job(
+        tmp_path, "legacy-default-selection",
+        source_text=source,
+        source_name="book.txt",
+        plan=plan,
+        generation_config={
+            "voice": "test",
+            "helper_commit": "new-helper",
+            "selection_mode": "all",
+            "selected_section_ids": ["S001", "S002"],
+            "text_paragraph_start": 1,
+            "text_paragraph_end": 0,
+        },
+        base_seed=7,
+    )
+    assert resumed
+    assert manifest["job_id"] == root.name
+
+
+def test_partial_section_or_paragraph_selection_remains_a_distinct_job_config(tmp_path):
+    source = (
+        "Chapter 1\n\nFirst chapter sentence.\n\n"
+        "Chapter 2\n\nSecond chapter sentence."
+    )
+    plan = plan_audiobook_chunks(source)
+    create_or_resume_job(
+        tmp_path, "partial-selection-identity",
+        source_text=source,
+        source_name="book.txt",
+        plan=plan,
+        generation_config={"voice": "test"},
+        base_seed=7,
+    )
+    try:
+        create_or_resume_job(
+            tmp_path, "partial-selection-identity",
+            source_text=source,
+            source_name="book.txt",
+            plan=plan,
+            generation_config={
+                "voice": "test",
+                "selection_mode": "selected_sections",
+                "selected_section_ids": ["S002"],
+            },
+            base_seed=7,
+        )
+    except ValueError as exc:
+        assert "different voice/settings/reference configuration" in str(exc)
+    else:
+        raise AssertionError("a partial selection must not resume a full-source job")
+
+
 def test_selected_sections_assemble_into_a_named_combined_master_and_bundle(tmp_path):
     from tools.longform_audiobook import filter_plan_sections, sha256_file
 
