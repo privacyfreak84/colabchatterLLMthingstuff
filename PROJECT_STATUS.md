@@ -265,7 +265,7 @@ The third notebook's former single crowded Audiobook Jobs form has been replaced
 
 The generation screen now includes a **Latest spoken chunk** audio player. It updates as each new chunk finishes and is initialized with the final valid chunk already in the saved job when resuming an otherwise-complete job.
 
-The saved WAV browser includes chunk files, replacement backups, manually assembled files, and legacy section/master files from older jobs. The browser is intentionally scoped to the selected Job ID so audio from separate books is not mixed. Drive persistence is required if saved audio must survive a Colab runtime reset.
+The saved WAV browser includes chunk files, replacement backups, manually assembled files, and legacy section/master files from older jobs. The browser is intentionally scoped to the selected Job ID so audio from separate books is not mixed. Playback and assembly use the sample rate recorded in the job manifest, so these tools do not need the Chatterbox model resident in GPU memory. Accent Check also now lists saved chunk and assembly WAVs. Drive persistence is required if saved audio must survive a Colab runtime reset.
 
 ### No automatic master WAV
 
@@ -287,7 +287,7 @@ New helper: tools/longform_audiobook.py, function assemble_selected_chunk_wavs.
 
 ### Verification
 
-GitHub Actions workflow [205](https://github.com/privacyfreak84/colabchatterLLMthingstuff/actions/runs/42500762352) passed **199 tests** on commit c7ad63071a2fc0458bef4ea0c146cc351acda633. The suite covers selected/all assembly, source order, invalid/unknown WAV rejection, ZIP inclusion, notebook syntax, generator output arity, current/previous audio playback wiring, and UI callback/input wiring.
+GitHub Actions workflow [210](https://github.com/privacyfreak84/colabchatterLLMthingstuff/actions/runs/42501313822) passed **199 tests** on commit `d2b0d7fa1c809d8bd669f5e61e522649a3c0f739`. The suite covers selected/all assembly, source order, invalid/unknown WAV rejection, ZIP inclusion, notebook syntax, generator output arity, current/previous audio playback wiring, model-independent saved-audio handling, chunk Accent Check discovery, and UI callback/input wiring.
 
 **Not yet tested in live Colab:** the rebuilt Gradio layout in a running session, playback of a freshly generated chunk, browsing previous job audio after a runtime reset with Drive enabled, assembling a subset and all completed chunks, or listening to the resulting master WAV. CI uses synthetic WAVs and static notebook checks, not real Chatterbox narration.
 
