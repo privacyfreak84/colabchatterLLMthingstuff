@@ -236,20 +236,20 @@ def test_selected_wav_assembly_rejects_empty_unknown_and_invalid_selections(tmp_
     wav_path = root / chunk["wav_relpath"]
     sf.write(wav_path, np.zeros(2400, dtype=np.float32), 24000, subtype="PCM_16")
     from tools.longform_audiobook import sha256_file
+    import pytest
+    with pytest.raises(ValueError, match="Select one or more"):
+        assemble_selected_chunk_wavs(root, manifest)
+    with pytest.raises(ValueError, match="Unknown chunk ID"):
+        assemble_selected_chunk_wavs(root, manifest, ["C99999"])
+    with pytest.raises(ValueError, match="no completed chunks"):
+        assemble_selected_chunk_wavs(root, manifest, include_all_completed=True)
+
     chunk.update({
         "status": "complete",
         "wav_sha256": sha256_file(wav_path),
         "duration_seconds": 0.1,
     })
     write_manifest(root, manifest)
-
-    import pytest
-    with pytest.raises(ValueError, match="Select one or more"):
-        assemble_selected_chunk_wavs(root, manifest)
-    with pytest.raises(ValueError, match="Unknown chunk ID"):
-        assemble_selected_chunk_wavs(root, manifest, ["C99999"])
-    with pytest.raises(ValueError, match="all completed chunks"):
-        assemble_selected_chunk_wavs(root, manifest, include_all_completed=True)
 
     # A completed entry with a modified WAV must not be included in an assembly.
     wav_path.write_bytes(wav_path.read_bytes() + b"modified")
