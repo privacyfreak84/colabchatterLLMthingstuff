@@ -25,6 +25,9 @@ The final deliverables are expected to include:
 - Separate chapter/section audio files so a listener can resume or navigate easily.
 - A lossless intermediate master for quality control and future remastering.
 - A cue/manifest file recording source sections, chunk order, timing, and file hashes.
+- The ability to select a one-based PDF page range (including a single page), a text paragraph range for non-paginated TXT/Markdown/pasted text, or one or more detected sections before synthesis.
+- Targeted chunk/section regeneration so defective portions can be replaced without regenerating approved portions; replacement should update the active WAV and rebuilt masters, with old WAV retention opt-in.
+- A single combined lossless WAV master plus separate section/chapter WAVs, with the combined master representing either the full source or the selected subset.
 - A pronunciation decision record documenting approved spoken forms and any exceptions.
 - A short README describing how the final audio was assembled and verified.
 
