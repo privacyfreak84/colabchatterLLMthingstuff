@@ -209,7 +209,7 @@ The Audiobook Jobs tab now has an optional **Custom output-name prefix**:
 
 ### Chatterbox English accent drift research and source patch (2026-11-08)
 
-The third notebook now applies a pinned source overlay to the loaded Chatterbox Multilingual V3 class. The overlay gives the model two independent conditioning inputs: a narrator identity recording and an optional same-language accent/style guide. The narrator supplies the VoiceEncoder and S3Gen speaker embeddings; the guide supplies T3 speech-prompt tokens and S3Gen speech-token/mel context. The option is wired into both Quick TTS and Audiobook Jobs. With the guide blank, the standard one-reference path is retained.
+The third notebook now applies a pinned source overlay to the loaded Chatterbox Multilingual V3 class. The overlay gives the model two independent conditioning inputs: a narrator identity recording and an optional same-language accent/style guide. The narrator supplies the VoiceEncoder and S3Gen speaker embeddings; the guide supplies T3 speech-prompt tokens and S3Gen speech-token/mel context. The option is wired into both Quick TTS and Audiobook Jobs. A prompt-start offset selects a later slice from the guide. With the guide blank and offset zero, the standard one-reference path is retained. The user's 19.6-second narrator recording can be uploaded in both fields, with a 6-second guide offset, to use the later 6-second T3 and 10-second S3Gen slices without introducing another speaker.
 
 **Root-cause findings are documented in** [docs/chatterbox-accent-root-cause.md](docs/chatterbox-accent-root-cause.md):
 
