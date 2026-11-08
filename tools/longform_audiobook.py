@@ -11,6 +11,7 @@ import os
 from io import BytesIO
 import re
 import secrets
+import shutil
 import tempfile
 import uuid
 import zipfile
@@ -198,6 +199,166 @@ def sha256_file(path: str | Path) -> str:
     return digest.hexdigest()
 
 
+def normalize_wrapped_text(text: str) -> str:
+    """Collapse visual line wraps to spaces while retaining blank-line paragraphs and punctuation."""
+    if not isinstance(text, str):
+        raise TypeError("Manuscript text must be a string.")
+    normalized = text.replace("\r\n", "\n").replace("\r", "\n")
+    normalized = normalized.replace("\x0c", "\n").replace("\ufeff", "")
+    lines = normalized.split("\n")
+    paragraphs: list[str] = []
+    current: list[str] = []
+
+    def flush() -> None:
+        if current:
+            paragraphs.append(" ".join(part for part in current if part))
+            current.clear()
+
+    for raw_line in lines:
+        line = " ".join(raw_line.split())
+        if not line:
+            flush()
+            continue
+        # Soft hyphens are explicit optional line-break markers, not punctuation.
+        if current and current[-1].endswith("\u00ad"):
+            current[-1] = current[-1][:-1] + line
+        else:
+            current.append(line)
+    flush()
+    return "\n\n".join(paragraphs).strip()
+
+
+def extract_pdf_text(
+    pdf_path: str | Path,
+    *,
+    page_start: int = 1,
+    page_end: int | None = None,
+    max_pages: int = 2500,
+) -> dict:
+    """Extract selectable PDF text with page provenance; this is not OCR."""
+    path = Path(pdf_path)
+    if not path.is_file() or path.suffix.lower() != ".pdf":
+        raise ValueError("Select an existing PDF file.")
+    try:
+        from pypdf import PdfReader
+    except ImportError as exc:
+        raise RuntimeError("PDF support requires pypdf. Rerun the notebook setup cell.") from exc
+
+    try:
+        reader = PdfReader(str(path), strict=False)
+    except Exception as exc:
+        raise ValueError(f"Could not open PDF ({type(exc).__name__}: {exc}).") from exc
+
+    if getattr(reader, "is_encrypted", False):
+        raise ValueError("This PDF is encrypted. Decrypt it first and upload an unprotected copy.")
+    total_pages = len(reader.pages)
+    if total_pages < 1:
+        raise ValueError("The PDF contains no pages.")
+    if total_pages > max_pages:
+        raise ValueError(f"The PDF has {total_pages:,} pages; the current safety limit is {max_pages:,} pages.")
+
+    start = int(page_start)
+    end = total_pages if page_end in (None, 0) else int(page_end)
+    if start < 1 or end < start or end > total_pages:
+        raise ValueError(f"Invalid PDF page range. Choose pages 1 through {total_pages}, with end page 0 meaning the last page.")
+
+    extracted_pages: list[dict] = []
+    page_texts: list[str] = []
+    warnings: list[str] = []
+    total_chars = 0
+
+    for page_number in range(start, end + 1):
+        page = reader.pages[page_number - 1]
+        raw_text = ""
+        extraction_mode = "layout"
+        try:
+            raw_text = page.extract_text(extraction_mode="layout") or ""
+        except TypeError:
+            extraction_mode = "default_fallback"
+            raw_text = page.extract_text() or ""
+        except Exception as exc:
+            extraction_mode = "default_fallback"
+            warnings.append(f"Page {page_number}: layout extraction failed ({type(exc).__name__}); tried default extraction.")
+            try:
+                raw_text = page.extract_text() or ""
+            except Exception as fallback_exc:
+                warnings.append(f"Page {page_number}: text extraction failed ({type(fallback_exc).__name__}).")
+                raw_text = ""
+
+        cleaned_page = normalize_wrapped_text(raw_text)
+        page_chars = len(cleaned_page.replace("\n", " "))
+        total_chars += page_chars
+        extracted_pages.append({
+            "page_number": page_number,
+            "characters_extracted": page_chars,
+            "sha256": sha256_text(cleaned_page),
+            "extraction_mode": extraction_mode,
+            "has_selectable_text": bool(cleaned_page.strip()),
+        })
+        if not cleaned_page.strip():
+            warnings.append(f"Page {page_number}: no selectable text found.")
+        elif page_chars < 40:
+            warnings.append(f"Page {page_number}: only {page_chars} characters extracted; inspect this page for scanned content, figures, or extraction gaps.")
+        page_texts.append(cleaned_page)
+
+    nonempty_pages = [
+        (record, text)
+        for record, text in zip(extracted_pages, page_texts)
+        if text.strip()
+    ]
+    combined_with_page_breaks = "\n".join(text for _, text in nonempty_pages)
+    cleaned_text = normalize_wrapped_text(combined_with_page_breaks)
+    if not cleaned_text or (total_chars < 100 and max((p["characters_extracted"] for p in extracted_pages), default=0) < 40):
+        raise ValueError(
+            "This PDF appears to contain scanned/image-only pages or too little selectable text. "
+            "This notebook extracts embedded text but does not perform OCR. Run OCR first, then upload the searchable PDF."
+        )
+
+    page_spans = []
+    cursor = 0
+    for index, (record, page_text) in enumerate(nonempty_pages):
+        page_start_offset = cursor
+        page_end_offset = page_start_offset + len(page_text)
+        page_spans.append({
+            "page_number": record["page_number"],
+            "char_start": page_start_offset,
+            "char_end": page_end_offset,
+        })
+        cursor = page_end_offset + (1 if index < len(nonempty_pages) - 1 else 0)
+
+    metadata = getattr(reader, "metadata", None)
+    pdf_metadata = {}
+    if metadata is not None:
+        for key, value in (
+            ("title", getattr(metadata, "title", None)),
+            ("author", getattr(metadata, "author", None)),
+            ("subject", getattr(metadata, "subject", None)),
+            ("creator", getattr(metadata, "creator", None)),
+        ):
+            if value:
+                pdf_metadata[key] = str(value)[:500]
+
+    return {
+        "text": cleaned_text,
+        "page_spans": page_spans,
+        "metadata": {
+            "source_kind": "pdf",
+            "source_filename": path.name,
+            "pdf_sha256": sha256_file(path),
+            "total_pdf_pages": total_pages,
+            "selected_page_start": start,
+            "selected_page_end": end,
+            "selected_page_count": end - start + 1,
+            "extracted_character_count": len(cleaned_text),
+            "pages": extracted_pages,
+            "pdf_metadata": pdf_metadata,
+            "warnings": warnings,
+            "ocr_performed": False,
+            "text_wrapping_normalized": True,
+        },
+    }
+
+
 def safe_job_id(value: str | None = None) -> str:
     candidate = (value or "").strip()
     if not candidate:
@@ -297,6 +458,7 @@ def plan_audiobook_chunks(
     max_chars: int = 320,
     *,
     speak_headings: bool = True,
+    source_pages: list[dict] | None = None,
     chunk_pause_seconds: float = 0.18,
     paragraph_pause_seconds: float = 0.45,
     section_pause_seconds: float = 1.0,
@@ -311,23 +473,26 @@ def plan_audiobook_chunks(
     if any(not 0 <= float(value) <= 5 for value in pauses):
         raise ValueError("Every pause must be between 0 and 5 seconds.")
 
-    normalized = source_text.replace("\r\n", "\n").replace("\r", "\n")
+    normalized = normalize_wrapped_text(source_text)
     lines = normalized.split("\n")
+    source_pages = source_pages or []
     raw_sections: list[dict] = []
     current_title = "Full text"
-    current_paragraph_lines: list[tuple[str, int]] = []
+    current_paragraph_lines: list[tuple[str, int, int, int]] = []
     current_paragraphs: list[dict] = []
     saw_heading = False
 
     def flush_paragraph() -> None:
         nonlocal current_paragraph_lines
         if current_paragraph_lines:
-            joined = " ".join(part.strip() for part, _ in current_paragraph_lines if part.strip())
+            joined = " ".join(part.strip() for part, _, _, _ in current_paragraph_lines if part.strip())
             if joined:
                 current_paragraphs.append({
                     "text": joined,
                     "line_start": current_paragraph_lines[0][1],
                     "line_end": current_paragraph_lines[-1][1],
+                    "char_start": current_paragraph_lines[0][2],
+                    "char_end": current_paragraph_lines[-1][3],
                 })
         current_paragraph_lines = []
 
@@ -338,7 +503,11 @@ def plan_audiobook_chunks(
             raw_sections.append({"title": current_title, "paragraphs": current_paragraphs})
         current_paragraphs = []
 
+    line_offset = 0
     for line_number, line in enumerate(lines, start=1):
+        char_start = line_offset
+        char_end = char_start + len(line)
+        line_offset = char_end + 1
         heading = _heading_title(line)
         if heading:
             flush_section()
@@ -351,12 +520,14 @@ def plan_audiobook_chunks(
                     "text": heading,
                     "line_start": line_number,
                     "line_end": line_number,
+                    "char_start": char_start,
+                    "char_end": char_end,
                     "is_heading": True,
                 })
         elif not line.strip():
             flush_paragraph()
         else:
-            current_paragraph_lines.append((line, line_number))
+            current_paragraph_lines.append((line, line_number, char_start, char_end))
     flush_section()
 
     if not raw_sections:
@@ -373,6 +544,7 @@ def plan_audiobook_chunks(
         }
         for paragraph_index, paragraph in enumerate(section["paragraphs"], start=1):
             paragraph_chunks = _split_paragraph(paragraph["text"], int(max_chars))
+            paragraph_search_cursor = 0
             for part_index, (chunk_text, split_inside_sentence) in enumerate(paragraph_chunks, start=1):
                 chunk_index = len(chunks) + 1
                 chunk_id = f"C{chunk_index:05d}"
@@ -406,6 +578,9 @@ def plan_audiobook_chunks(
                     "paragraph_index": paragraph_index,
                     "line_start": paragraph["line_start"],
                     "line_end": paragraph["line_end"],
+                    "source_char_start": chunk_char_start,
+                    "source_char_end": chunk_char_end,
+                    "source_pages": chunk_source_pages,
                     "text": chunk_text,
                     "tts_text": tts_text,
                     "tts_text_sha256": sha256_text(tts_text),
@@ -428,6 +603,7 @@ def plan_audiobook_chunks(
         "source_sha256": sha256_text(normalized),
         "source_characters": len(normalized),
         "source_lines": len(lines),
+        "source_pages": source_pages,
         "chunk_count": len(chunks),
         "section_count": len(sections),
         "max_chunk_characters": int(max_chars),
@@ -573,6 +749,10 @@ def create_or_resume_job(
             raise ValueError("This job ID has different voice/settings/reference configuration. Use the original settings or a new job ID.")
         if manifest.get("plan_sha256") != plan_hash:
             raise ValueError("The chunk plan differs from the saved job. Use the original chunk settings or a new job ID.")
+        if manifest.get("source_artifact") != artifact_record:
+            raise ValueError("The original uploaded PDF/TXT/MD file differs from the saved job. Re-upload the exact same file or use a new Job ID.")
+        if manifest.get("source_metadata") != source_metadata:
+            raise ValueError("The source extraction or PDF page-range settings differ from the saved job. Restore them or use a new Job ID.")
         if len(manifest.get("chunks", [])) != len(plan["chunks"]):
             raise ValueError("Saved job chunk count does not match the current plan.")
         for saved, planned in zip(manifest["chunks"], plan["chunks"]):
@@ -939,6 +1119,11 @@ def create_job_bundle(job_dir: str | Path) -> Path:
             path = root / relative
             if path.is_file():
                 archive.write(path, arcname=relative)
+        source_artifact = manifest.get("source_artifact")
+        if source_artifact and source_artifact.get("relpath"):
+            artifact_path = _safe_relative_path(root, source_artifact["relpath"])
+            if artifact_path.is_file():
+                archive.write(artifact_path, arcname=source_artifact["relpath"])
         for folder_name in ("chunks", "sections", "revisions"):
             folder = root / folder_name
             if folder.exists():
