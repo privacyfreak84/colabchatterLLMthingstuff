@@ -74,14 +74,22 @@ def install_fake_chatterbox_modules(monkeypatch):
 
     def load(path, sr, mono=True):
         path = str(path)
-        value = 0.2 if "identity" in path else 0.8
-        audio = np.full(sr, value, dtype=np.float32)
+        if "identity" in path:
+            audio = np.full(sr * 25, 0.2, dtype=np.float32)
+        else:
+            # A time ramp makes later prompt offsets observable in the tests.
+            audio = np.linspace(0.0, 1.0, sr * 25, dtype=np.float32)
         loads[path] = audio.copy()
         return audio, sr
 
     def resample(audio, orig_sr, target_sr):
-        # Keep amplitude/content distinctive while avoiding real DSP dependencies.
-        return np.asarray(audio, dtype=np.float32).copy()
+        audio = np.asarray(audio, dtype=np.float32)
+        target_length = round(len(audio) * target_sr / orig_sr)
+        return np.interp(
+            np.linspace(0, len(audio) - 1, target_length),
+            np.arange(len(audio)),
+            audio,
+        ).astype(np.float32)
 
     fake_librosa.load = load
     fake_librosa.resample = resample
@@ -129,8 +137,8 @@ def load_patch_module():
 
 
 class DummyTTS:
-    ENC_COND_LEN = 16000
-    DEC_COND_LEN = 240000
+    ENC_COND_LEN = 6 * 16000
+    DEC_COND_LEN = 10 * 24000
     device = "cpu"
 
     def __init__(self):
@@ -230,6 +238,64 @@ def test_source_patch_separates_voice_identity_from_accent_prompt(monkeypatch, t
     # Installer is idempotent in notebook restarts/re-execution.
     second = patch.install_chatterbox_accent_factorization(DummyTTS)
     assert second["already_installed"] is True
+
+
+def test_prompt_offset_uses_later_same_speaker_segment_for_style_only(monkeypatch, tmp_path):
+    install_fake_chatterbox_modules(monkeypatch)
+    patch = load_patch_module()
+    patch.install_chatterbox_accent_factorization(DummyTTS)
+
+    identity_path = tmp_path / "identity.wav"
+    accent_path = tmp_path / "accent.wav"
+    identity_path.write_bytes(b"identity")
+    accent_path.write_bytes(b"accent")
+
+    model = DummyTTS()
+    model.prepare_conditionals(
+        identity_path,
+        accent_prompt_path=accent_path,
+        accent_prompt_start_seconds=6.0,
+    )
+
+    # Six seconds into a 25-second ascending guide is roughly 0.24.
+    assert np.isclose(float(model.calls["t3_style"][0]), 0.24, atol=0.002)
+    assert np.isclose(float(model.calls["s3_style"][0]), 0.24, atol=0.002)
+    assert len(model.calls["t3_style"]) == 6 * 16000
+    assert len(model.calls["s3_style"]) == 10 * 24000
+
+    # Both T3 and S3Gen speaker identity vectors still come from the narrator.
+    assert np.isclose(float(model.calls["voice_identity"].mean()), 0.2)
+    assert np.isclose(float(model.calls["s3_identity"].mean()), 0.2)
+
+
+def test_prompt_offset_rejects_negative_and_incomplete_windows(monkeypatch, tmp_path):
+    install_fake_chatterbox_modules(monkeypatch)
+    patch = load_patch_module()
+    patch.install_chatterbox_accent_factorization(DummyTTS)
+
+    identity_path = tmp_path / "identity.wav"
+    accent_path = tmp_path / "accent.wav"
+    identity_path.write_bytes(b"identity")
+    accent_path.write_bytes(b"accent")
+    model = DummyTTS()
+
+    try:
+        model.prepare_conditionals(
+            identity_path, accent_prompt_path=accent_path, accent_prompt_start_seconds=-1
+        )
+    except ValueError as exc:
+        assert "cannot be negative" in str(exc)
+    else:
+        raise AssertionError("negative prompt offsets must be rejected")
+
+    try:
+        model.prepare_conditionals(
+            identity_path, accent_prompt_path=accent_path, accent_prompt_start_seconds=20
+        )
+    except ValueError as exc:
+        assert "full configured" in str(exc)
+    else:
+        raise AssertionError("a prompt offset without a full prompt window must be rejected")
 
 
 def test_patched_generate_accepts_separate_accent_reference(monkeypatch, tmp_path):
