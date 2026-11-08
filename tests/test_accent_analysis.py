@@ -208,7 +208,8 @@ def test_markdown_report_is_timestamped_and_has_no_transcript_or_source_text(tmp
 def test_accent_model_loader_is_pinned_and_uses_safe_torch_loading():
     import inspect
     source = inspect.getsource(accent.load_accentcl_model)
-    assert accent.ACCENTCL_COMMIT in source
+    assert "ACCENTCL_COMMIT" in source
+    assert len(accent.ACCENTCL_COMMIT) == 40
     assert "weights_only=True" in source
     assert "weights_only=False" not in source
     assert "torch.load" in source
