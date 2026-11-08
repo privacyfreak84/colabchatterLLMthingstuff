@@ -625,3 +625,35 @@ def test_audiobook_saved_playback_and_manual_assembly_ui_callbacks_match():
     assert "assemble_job_masters" not in called_names
     assert "assemble_selected_chunk_wavs" not in called_names
     assert "create_job_bundle" in called_names
+
+
+def test_latest_audio_player_path_is_initialized_before_first_streamed_update():
+    notebook = load_notebook()
+    batch = code_sources(notebook)[5]
+    tree = ast.parse(batch)
+    generator = next(
+        node for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "run_audiobook_job"
+    )
+
+    latest_audio_assignments = [
+        node.lineno
+        for node in ast.walk(generator)
+        if isinstance(node, ast.Assign)
+        and any(
+            isinstance(target, ast.Name) and target.id == "latest_audio_path"
+            for target in node.targets
+        )
+    ]
+    yield_nodes = [
+        node for node in ast.walk(generator)
+        if isinstance(node, ast.Yield)
+    ]
+
+    assert latest_audio_assignments, "latest_audio_path must be initialized"
+    assert yield_nodes, "the generator must stream at least one update"
+    assert min(latest_audio_assignments) < min(node.lineno for node in yield_nodes), (
+        "latest_audio_path must be initialized before the first yield; "
+        "otherwise a new job fails before the first chunk is generated"
+    )
+
