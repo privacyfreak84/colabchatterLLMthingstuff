@@ -193,23 +193,20 @@ def extract_pdf_manuscript(
         )
 
     page_spans = []
-    cursor = 0
-    for index, (record, page_text) in enumerate(nonempty_pages):
-        char_start = cursor
-        char_end = char_start + len(page_text)
+    search_cursor = 0
+    for record, page_text in nonempty_pages:
+        # Locate the page's normalized text in the final reflowed document. This
+        # accounts for paragraph-heading boundaries and hyphenated page joins.
+        char_start = normalized_text.find(page_text, search_cursor)
+        if char_start < 0:
+            char_start = search_cursor
+        char_end = min(len(normalized_text), char_start + len(page_text))
         page_spans.append({
             "page_number": record["page"],
             "char_start": char_start,
             "char_end": char_end,
         })
-        joins_to_next_without_separator = (
-            index < len(nonempty_pages) - 1
-            and page_text.rstrip().endswith("-")
-        )
-        cursor = char_end + (
-            0 if joins_to_next_without_separator else
-            1 if index < len(nonempty_pages) - 1 else 0
-        )
+        search_cursor = char_end
 
     empty_pages = [
         item["page"] for item in page_records
