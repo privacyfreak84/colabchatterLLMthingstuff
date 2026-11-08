@@ -180,7 +180,9 @@ The third notebook now has an optional **Accent Check** tab. It uses the open-so
 
 ## Immediate next action
 
-**Single next action:** the user listens to the aligned splices (eight files, built from the existing nextrecon7 clips, no model needed: `python scripts/make_aligned_splices.py --retest-dir ~/audiobook-narrator-retest/v3-narrator-retest --base full`) and says whether the pauses, stretched words, pitch and pace are fixed, and which clips still have a British accent.
+**Single next action:** smoke-test the new Accent Check tab on a short, known North American English clip, a known British Isles English clip, and one existing narrator retest clip. This establishes whether the regional predictions are useful on this synthetic voice before interpreting a whole-book report. No manuscript text or book passage is needed for this calibration.
+
+After the scanner check, return to the existing Pass 6 listening checkpoint: build/listen to the aligned splices (eight files, built from the existing nextrecon7 clips, no model needed: `python scripts/make_aligned_splices.py --retest-dir ~/audiobook-narrator-retest/v3-narrator-retest --base full`) and judge the pauses, stretched words, pitch, pace, and remaining British-accent drift.
 
 If the accent persists, test the stand-in renders: `python scripts/run_narrator_retest_local.py --narrator ~/narrator_reference.wav --remaining-terms --routes hybrid --english-standin --aligned-splices` (see docs/local_cpu_setup.md). Per-term choices (plain English or Hindi-bridged) and the approved spoken forms stay open for the eight terms other than Buddha until the user is satisfied with the result.
 
