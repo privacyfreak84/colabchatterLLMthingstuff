@@ -393,6 +393,35 @@ def test_custom_output_name_is_wired_through_audiobook_generation_and_accent_sca
     assert "output_name" in batch
 
 
+def test_accent_factorization_is_wired_into_quick_tts_too():
+    notebook = load_notebook()
+    sources = code_sources(notebook)
+    quick = sources[4]
+    ui = sources[6]
+    quick_tree = ast.parse(quick)
+    ui_tree = ast.parse(ui)
+
+    callback = next(
+        node for node in quick_tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "generate_speech"
+    )
+    click = next(
+        node for node in ast.walk(ui_tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "click"
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "generate_button"
+    )
+    inputs = next(keyword.value for keyword in click.keywords if keyword.arg == "inputs")
+    assert isinstance(inputs, ast.List)
+    assert len(inputs.elts) == len(callback.args.args) - 1
+    assert "uploaded_accent_reference: str | None" in quick
+    assert "accent_prompt_path=" in quick
+    assert "accent_reference" in quick
+    assert "accent_reference_audio_input = gr.Audio(" in ui
+
+
 def test_accent_factorization_patch_is_pinned_and_wired_into_audiobook_jobs():
     notebook = load_notebook()
     sources = code_sources(notebook)
