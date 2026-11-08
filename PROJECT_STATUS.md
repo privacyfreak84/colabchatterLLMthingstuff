@@ -225,9 +225,37 @@ The third notebook now applies a pinned source overlay to the loaded Chatterbox 
 
 **Not resolved / not claimed:** there is no evidence yet that British-sounding output has been eliminated. The source patch has not had a live Colab GPU listening evaluation. The general checkpoint has no dialect control token. A hard US-English guarantee would require region-conditioned US/UK checkpoints or suitable retraining/fine-tuning with region-labelled speech and objective/human evaluation. No retraining has been started.
 
+
+## Accent Check checkpoint compatibility and narration rate (2026-11-08)
+
+### AccentCL deserialization failure
+
+A live Colab Accent Check attempt failed in PyTorch's restricted unpickler with `IndexError: pop from empty list` while loading `accentcl_spanish_chinese.pt` with `weights_only=True`. The Diffusers `LoRACompatibleLinear` deprecation and optional `pkuseg`-missing tokenizer warning were separate and did not cause that exception.
+
+**Root cause:** the official AccentCL inference loader uses the legacy `torch.load(..., weights_only=False)` path for this historical checkpoint. Forcing the newer restricted weights-only unpickler onto that file is incompatible with its serialization format.
+
+**Fix:** `tools/accent_analysis.py` now pins the checkpoint to immutable Hugging Face revision `af925d811ff95be41a2cacc3988cd3df410e762f`, checks the exact published size (**2,563,884,656 bytes**) and Git-LFS SHA-256 (**f4db857f696323d8a6c71073fff734c81dee33267a393b50c795f12ca9f86c93**), and only then uses the legacy loader. If size or hash differs, it raises before invoking `torch.load`. This compatibility path is restricted to the exact pinned official artifact; it is not a general loader for arbitrary checkpoints.
+
+Regression tests exercise both the verified-load path and rejection of a tampered artifact. The LoRA deprecation warning and missing optional Chinese segmentation package remain non-fatal environment warnings; they are not patched because they are unrelated to English AccentCL inference.
+
+### Pitch-preserving narration-rate control
+
+New helper: `tools/speech_rate.py`. It uses FFmpeg's `atempo` WSOLA filter on the model's float waveform. It does not change the WAV sample rate, lower pitch by naïvely changing playback rate, or insert echo/reverb. Processing is per speech chunk and runs **before** the explicitly configured inter-chunk / paragraph / section pauses are assembled.
+
+- Rate range: **0.75x to 1.15x**; default: **0.85x**; **1.00x** is the original model tempo.
+- Both Quick TTS and Audiobook Jobs expose a narration-pace slider.
+- Quick-TTS metadata and audiobook generation settings record the selected rate and processor ID. Each chunk records both original model duration and processed duration.
+- A different speed changes the audiobook generation fingerprint. Use a fresh Job ID for a different-rate version; do not mix old-rate chunks with new-rate chunks.
+- FFmpeg processing is checked for finite mono output and plausible duration. Missing FFmpeg, invalid rates, malformed output, and processing errors are reported rather than silently falling back to a pitch-shifting method.
+
+**Verification:** workflow [195](https://github.com/privacyfreak84/colabchatterLLMthingstuff/actions/runs/42499453277) passed **197 tests** on commit `27ce126cf4d7682564166d26a679bfc53f4ee2aa`. The test suite includes checkpoint digest enforcement, rate-helper behaviour and error handling, and both notebook callback/input integrations. The FFmpeg helper was also exercised locally against synthetic tones at several rates. This does not substitute for listening to actual Chatterbox speech.
+
+**Not yet verified:** reloading the updated notebook in Colab, downloading/verifying/loading the AccentCL checkpoint on the Colab runtime, scanning a reference accent clip, and listening to a representative page rendered at 0.85x and another chosen rate. The speech-rate DSP may still create content-dependent artefacts, so a short human-audited pilot is required before a long batch.
+
+
 ## Immediate next action
 
-**Single next action:** run a controlled Chatterbox accent pilot in Colab before using the new path for any audiobook batch. Use the same 19.6-second narrator recording in both reference inputs. Keep the narrator identity field unchanged, set the guide offset to 6.0 seconds, and compare (A) baseline with guide blank/offset zero against (B) factorized same-speaker later-slice conditioning. Use identical 10–20 English sentences, fixed repeated seeds, and all other synthesis settings held constant. Listen for US/UK vowel and rhotic differences, check AccentCL as a secondary triage signal, and separately judge whether speaker identity remains recognizably the narrator. Do not mark the accent issue fixed unless the factorized path is consistently American across repeats without material identity loss.
+**Single next action:** validate the updated third notebook in Colab with two short smoke tests before any long audiobook batch: (1) run Accent Check on a known North American or British English clip to confirm the pinned checkpoint downloads, passes its size/SHA-256 check, loads and produces a report; (2) render one reviewed representative page at **0.85x**, then a short comparison at **1.00x** or **0.80x**, and listen for natural phrasing, pitch stability, joins, and time-stretch artefacts. Use a new Job ID when changing the speed. If both pass, continue with the controlled Chatterbox accent-factorization pilot below. Do not approve the regional accent intervention or authorize full-book synthesis from CI results alone.
 
 After that smoke test, validate Accent Check on known North American and British Isles clips plus one narrator retest clip. Then return to the existing Pass 6 listening checkpoint: build/listen to the aligned splices (eight files, built from the existing nextrecon7 clips, no model needed: `python scripts/make_aligned_splices.py --retest-dir ~/audiobook-narrator-retest/v3-narrator-retest --base full`) and judge pauses, stretched words, pitch, pace, and remaining accent drift.
 
