@@ -117,7 +117,9 @@ def test_longform_batch_workflow_has_resume_logs_and_audiobook_exports():
     assert "def preview_audiobook_plan(" in batch
     assert "create_or_resume_job(" in batch
     assert "verify_chunk_wav(" in batch
-    assert "assemble_job_masters(" in batch
+    assert "assemble_selected_chunk_wavs(" in batch
+    assert "def assemble_audiobook_wavs(" in batch
+    assert "def play_saved_audiobook_audio(" in batch
     assert "create_job_bundle(" in batch
     assert "force_rerender_chunks(" in batch
     assert "build_audio_qa_report(" in batch
@@ -127,13 +129,21 @@ def test_longform_batch_workflow_has_resume_logs_and_audiobook_exports():
     assert "audit_text_tokenization(" in batch
     assert 'with gr.Tab("Audiobook Jobs")' in ui
     assert 'with gr.Tab("Logs and Recovery")' in ui
-    assert "Preview section and chunk plan" in ui
-    assert "Generate / resume audiobook job" in ui
+    assert "Preview manuscript and chunk plan" in ui
+    assert "Generate / resume audiobook" in ui
+    assert 'with gr.Tab("Create / Resume")' in ui
+    assert 'with gr.Tab("Listen & Assemble")' in ui
     assert "approval_checkbox" in ui
     assert "batch_rerender_ids_input" in ui
     assert "batch_reroll_seed_input" in ui
     assert "batch_qa_output" in ui
-    assert "List saved audiobook jobs" in ui
+    assert "Refresh saved jobs" in ui
+    assert "Latest spoken chunk" in ui
+    assert "Previously generated WAV" in ui
+    assert "Use all completed chunks in this job" in ui
+    assert "Nothing is combined into a master automatically" in ui
+    assert "batch_master_output" not in ui
+    assert "batch_section_masters_output" not in ui
     assert "inspected_qa_output" in ui
     assert "allowed_paths=[str(LOCAL_OUTPUT_DIR)] + ([str(DRIVE_OUTPUT_DIR)]" in ui
     assert "full-book approval gate" in all_text.lower()
@@ -141,7 +151,7 @@ def test_longform_batch_workflow_has_resume_logs_and_audiobook_exports():
     assert "longform.normalize_manuscript_text(text)" in quick_helpers
 
 
-def test_audiobook_generator_yields_match_all_nine_gradio_outputs():
+def test_audiobook_generator_yields_match_all_eight_gradio_outputs():
     notebook = load_notebook()
     sources = code_sources(notebook)
     batch_source = sources[5]
@@ -157,7 +167,7 @@ def test_audiobook_generator_yields_match_all_nine_gradio_outputs():
         if isinstance(node, ast.Yield) and isinstance(node.value, ast.Tuple):
             yielded_tuple_sizes.append(len(node.value.elts))
     assert len(yielded_tuple_sizes) == 5
-    assert set(yielded_tuple_sizes) == {9}
+    assert set(yielded_tuple_sizes) == {8}
 
     ui_tree = ast.parse(ui_source)
     batch_click = next(
@@ -171,7 +181,7 @@ def test_audiobook_generator_yields_match_all_nine_gradio_outputs():
     outputs = next(keyword.value for keyword in batch_click.keywords if keyword.arg == "outputs")
     inputs = next(keyword.value for keyword in batch_click.keywords if keyword.arg == "inputs")
     assert isinstance(outputs, ast.List)
-    assert len(outputs.elts) == 9
+    assert len(outputs.elts) == 8
     assert isinstance(inputs, ast.List)
     assert len(inputs.elts) == len(generator.args.args) - 1  # progress is injected by Gradio
 
@@ -538,3 +548,72 @@ def test_pitch_preserving_speech_rate_control_is_wired_to_quick_and_audiobook_ge
     batch_inputs = next(keyword.value for keyword in batch_click.keywords if keyword.arg == "inputs")
     batch_names = [item.id for item in batch_inputs.elts]
     assert batch_names[batch_names.index("batch_conditioning_profile_input") + 1] == "batch_speech_rate_input"
+
+
+
+def test_audiobook_saved_playback_and_manual_assembly_ui_callbacks_match():
+    notebook = load_notebook()
+    sources = code_sources(notebook)
+    batch = sources[5]
+    ui = sources[6]
+    batch_tree = ast.parse(batch)
+    ui_tree = ast.parse(ui)
+
+    assembly = next(
+        node for node in batch_tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "assemble_audiobook_wavs"
+    )
+    assert len(assembly.args.args) == 5  # progress is injected by Gradio
+    refresh = next(
+        node for node in batch_tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "refresh_audiobook_job_choices"
+    )
+    assert len(refresh.args.args) == 0
+    assert "list_audiobook_audio_choices(" in batch
+    assert "longform._safe_relative_path(" in batch
+
+    assemble_click = next(
+        node for node in ast.walk(ui_tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "click"
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "assembly_button"
+    )
+    inputs = next(k.value for k in assemble_click.keywords if k.arg == "inputs")
+    outputs = next(k.value for k in assemble_click.keywords if k.arg == "outputs")
+    assert isinstance(inputs, ast.List) and len(inputs.elts) == len(assembly.args.args) - 1
+    assert [item.id for item in inputs.elts] == [
+        "saved_audiobook_job_input",
+        "assembly_chunk_selection_input",
+        "assembly_all_chunks_input",
+        "assembly_output_name_input",
+    ]
+    assert isinstance(outputs, ast.List) and len(outputs.elts) == 5
+
+    saved_audio_change = next(
+        node for node in ast.walk(ui_tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "change"
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "saved_audiobook_audio_input"
+    )
+    audio_inputs = next(k.value for k in saved_audio_change.keywords if k.arg == "inputs")
+    audio_outputs = next(k.value for k in saved_audio_change.keywords if k.arg == "outputs")
+    assert isinstance(audio_inputs, ast.List) and len(audio_inputs.elts) == 2
+    assert isinstance(audio_outputs, ast.List) and len(audio_outputs.elts) == 2
+
+    # A completed generation no longer calls automatic whole-book/section assembly.
+    generator = next(
+        node for node in batch_tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "run_audiobook_job"
+    )
+    called_names = {
+        node.func.attr
+        for node in ast.walk(generator)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+    }
+    assert "assemble_job_masters" not in called_names
+    assert "assemble_selected_chunk_wavs" not in called_names
+    assert "create_job_bundle" in called_names
