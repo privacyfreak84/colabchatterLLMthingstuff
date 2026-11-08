@@ -644,3 +644,69 @@ def test_pdf_original_is_preserved_in_job_folder_and_delivery_bundle(tmp_path):
     bundle = create_job_bundle(root)
     with zipfile.ZipFile(bundle) as archive:
         assert "source_original.pdf" in archive.namelist()
+
+
+def test_existing_job_remains_resumable_across_helper_commit_updates(tmp_path):
+    source = "A sentence that remains the same."
+    plan = plan_audiobook_chunks(source)
+    root, manifest, resumed = create_or_resume_job(
+        tmp_path, "helper-upgrade",
+        source_text=source,
+        source_name="book.txt",
+        plan=plan,
+        generation_config={"voice": "test", "helper_commit": "old-helper-sha"},
+        base_seed=7,
+    )
+    assert not resumed
+    _, updated_manifest, resumed = create_or_resume_job(
+        tmp_path, "helper-upgrade",
+        source_text=source,
+        source_name="book.txt",
+        plan=plan,
+        generation_config={"voice": "test", "helper_commit": "new-helper-sha"},
+        base_seed=7,
+    )
+    assert resumed
+    assert updated_manifest["job_id"] == root.name
+
+
+def test_selected_sections_assemble_into_a_named_combined_master_and_bundle(tmp_path):
+    from tools.longform_audiobook import filter_plan_sections, sha256_file
+
+    source = (
+        "Chapter 1\n\nThis first chapter is intentionally excluded.\n\n"
+        "Chapter 2\n\nThis second chapter should be spoken."
+    )
+    full_plan = plan_audiobook_chunks(source)
+    selected_plan = filter_plan_sections(full_plan, ["S002"])
+    root, manifest, resumed = create_or_resume_job(
+        tmp_path,
+        "selected-sections",
+        source_text=source,
+        source_name="book.txt",
+        plan=selected_plan,
+        generation_config={"voice": "test"},
+        base_seed=4,
+    )
+    assert not resumed
+    for chunk in manifest["chunks"]:
+        wav_path = root / chunk["wav_relpath"]
+        wav_path.parent.mkdir(parents=True, exist_ok=True)
+        sf.write(wav_path, np.full(2400, 0.05, dtype=np.float32), 24000, subtype="PCM_16")
+        chunk.update({
+            "status": "complete",
+            "wav_sha256": sha256_file(wav_path),
+            "duration_seconds": 0.1,
+        })
+    write_manifest(root, manifest)
+
+    artifacts = assemble_job_masters(root, manifest)
+    master_path = root / artifacts["whole_book_master"]["relpath"]
+    assert master_path.name == "selected_sections_master.wav"
+    assert artifacts["whole_book_master"]["is_full_source"] is False
+    assert manifest["plan"]["selected_section_ids"] == ["S002"]
+
+    bundle = create_job_bundle(root)
+    with zipfile.ZipFile(bundle) as archive:
+        assert "selected_sections_master.wav" in archive.namelist()
+        assert "whole_book_master.wav" not in archive.namelist()
