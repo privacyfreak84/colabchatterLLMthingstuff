@@ -973,20 +973,23 @@ def force_rerender_chunks(
         pending = None
         if old_path.is_file():
             old_hash = sha256_file(old_path)
-            pending = {
-                key: chunk.get(key)
-                for key in (
-                    "seed", "status", "wav_sha256", "duration_seconds",
-                    "elapsed_seconds", "peak_before_limiter", "limiter_gain",
-                    "completed_at_utc", "device",
-                )
-            }
-            pending["seed"] = old_seed
-            pending["wav_sha256"] = old_hash
-            pending["was_verified_complete"] = bool(
+            active_wav_is_valid = bool(
                 chunk.get("status") == "complete"
                 and chunk.get("wav_sha256") == old_hash
             )
+            if active_wav_is_valid:
+                pending = {
+                    key: chunk.get(key)
+                    for key in (
+                        "seed", "status", "wav_sha256", "duration_seconds",
+                        "elapsed_seconds", "peak_before_limiter", "limiter_gain",
+                        "completed_at_utc", "device",
+                    )
+                }
+                pending["seed"] = old_seed
+                pending["wav_sha256"] = old_hash
+                pending["was_verified_complete"] = True
+                chunk["pending_replacement"] = pending
             if preserve_previous:
                 previous_renders = chunk.setdefault("previous_renders", [])
                 revision_number = len(previous_renders) + 1
@@ -1001,9 +1004,8 @@ def force_rerender_chunks(
                     "duration_seconds": chunk.get("duration_seconds"),
                     "relpath": str(revision_path.relative_to(root)),
                     "preserved_at_utc": utc_now(),
-                    "was_verified_complete": pending["was_verified_complete"],
+                    "was_verified_complete": active_wav_is_valid,
                 })
-            chunk["pending_replacement"] = pending
 
         if new_random_seed:
             chunk.setdefault("seed_history", []).append(old_seed)
