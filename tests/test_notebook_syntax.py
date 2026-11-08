@@ -137,6 +137,8 @@ def test_longform_batch_workflow_has_resume_logs_and_audiobook_exports():
     assert "inspected_qa_output" in ui
     assert "allowed_paths=[str(LOCAL_OUTPUT_DIR)] + ([str(DRIVE_OUTPUT_DIR)]" in ui
     assert "full-book approval gate" in all_text.lower()
+    quick_helpers = sources[2]
+    assert "longform.normalize_manuscript_text(text)" in quick_helpers
 
 
 def test_audiobook_generator_yields_match_all_nine_gradio_outputs():
