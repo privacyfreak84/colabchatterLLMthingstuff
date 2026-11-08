@@ -390,8 +390,8 @@ def write_accent_report(report: dict, output_dir: str | Path) -> tuple[str, str]
         )
         writer.writeheader()
         for row in report["segments"]:
-            item = dict(row)
-            item["scores"] = json.dumps(item["scores"], ensure_ascii=False)
+            item = {key: row.get(key, "") for key in writer.fieldnames}
+            item["scores"] = json.dumps(row.get("scores", {}), ensure_ascii=False)
             writer.writerow(item)
     return str(json_path), str(csv_path)
 
@@ -455,7 +455,7 @@ def load_accentcl_model(
     if progress_callback:
         progress_callback("Loading Whisper Large v3 and the accent classifier...")
     checkpoint = torch.load(
-        checkpoint_path, map_location=torch.device(device), weights_only=True,
+        checkpoint_path, map_location="cpu", weights_only=True,
     )
     label2id = checkpoint.get("label2id")
     state_dict = checkpoint.get("model")
