@@ -833,9 +833,12 @@ def test_selected_sections_assemble_into_a_named_combined_master_and_bundle(tmp_
     assert manifest["plan"]["selected_section_ids"] == ["S002"]
 
     bundle = create_job_bundle(root)
+    assert master_path.is_file()
     with zipfile.ZipFile(bundle) as archive:
-        assert "selected_sections_master.wav" in archive.namelist()
-        assert "whole_book_master.wav" not in archive.namelist()
+        names = set(archive.namelist())
+    assert "selected_sections_master.wav" not in names
+    assert "whole_book_master.wav" not in names
+    assert any(name.startswith("sections/") for name in names)
 
 
 def test_safe_output_name_rejects_paths_and_reserved_filenames():
@@ -894,7 +897,8 @@ def test_custom_output_name_prefixes_chunks_sections_master_and_bundle(tmp_path)
     assert bundle.name == "Buddhist Yoga_audiobook_delivery_bundle.zip"
     with zipfile.ZipFile(bundle) as archive:
         names = set(archive.namelist())
-    assert master_path.name in names
+    assert master_path.is_file()
+    assert master_path.name not in names
     assert any(name.startswith("chunks/Buddhist Yoga_c") for name in names)
     assert any(name.startswith("sections/Buddhist Yoga_s") for name in names)
 
