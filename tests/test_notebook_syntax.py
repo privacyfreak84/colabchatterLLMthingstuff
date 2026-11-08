@@ -169,8 +169,30 @@ def test_audiobook_generator_yields_match_all_nine_gradio_outputs():
         and node.func.value.id == "run_batch_button"
     )
     outputs = next(keyword.value for keyword in batch_click.keywords if keyword.arg == "outputs")
+    inputs = next(keyword.value for keyword in batch_click.keywords if keyword.arg == "inputs")
     assert isinstance(outputs, ast.List)
     assert len(outputs.elts) == 9
+    assert isinstance(inputs, ast.List)
+    assert len(inputs.elts) == len(generator.args.args) - 1  # progress is injected by Gradio
+
+    preview_function = next(
+        node for node in batch_tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "preview_audiobook_plan"
+    )
+    preview_click = next(
+        node for node in ast.walk(ui_tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "click"
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "preview_button"
+    )
+    preview_inputs = next(keyword.value for keyword in preview_click.keywords if keyword.arg == "inputs")
+    assert isinstance(preview_inputs, ast.List)
+    assert len(preview_inputs.elts) == len(preview_function.args.args)
+    preview_outputs = next(keyword.value for keyword in preview_click.keywords if keyword.arg == "outputs")
+    assert isinstance(preview_outputs, ast.List)
+    assert len(preview_outputs.elts) == 2
 
 
 def test_pdf_ingestion_and_wrapped_line_reflow_are_wired_into_audiobook_ui():
