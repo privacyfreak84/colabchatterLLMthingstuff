@@ -346,7 +346,7 @@ def test_section_selection_and_atomic_rerender_controls_are_wired_into_batch_ui(
     assert 'label="Sections to speak (empty selection = all)"' in ui
     assert "batch_keep_previous_renders_input" in ui
     assert "selected_sections_master.wav" in all_text
-    assert "atomically replaces the old active file" in all_text.lower()
+    assert "atomically replaces the active wav" in all_text.lower()
 
 
 def test_section_selection_generator_and_preview_ui_arities_match():
