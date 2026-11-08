@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any
 
 
-PATCH_VERSION = "1.0.0"
+PATCH_VERSION = "1.1.0"
 PATCH_FEATURE = "separate-speaker-identity-and-accent-style-conditioning"
 
 
@@ -61,6 +61,7 @@ def install_chatterbox_accent_factorization(model_class=None) -> dict:
         wav_fpath,
         exaggeration=0.5,
         accent_prompt_path=None,
+        accent_prompt_start_seconds: float = 0.0,
     ):
         """Prepare identity from wav_fpath and acoustic style from accent_prompt_path.
 
@@ -69,6 +70,14 @@ def install_chatterbox_accent_factorization(model_class=None) -> dict:
         """
         identity_path = Path(wav_fpath)
         style_path = Path(accent_prompt_path) if accent_prompt_path else identity_path
+        prompt_offset_seconds = float(accent_prompt_start_seconds)
+        if prompt_offset_seconds < 0:
+            raise ValueError("Accent/style prompt start time cannot be negative.")
+        if prompt_offset_seconds and accent_prompt_path is None:
+            raise ValueError(
+                "A non-zero accent/style prompt offset requires a separate accent/style guide file. "
+                "For the later part of the narrator recording, upload that same original recording as the guide."
+            )
         if not identity_path.is_file():
             raise ValueError(f"Narrator identity reference does not exist: {identity_path}")
         if not style_path.is_file():
@@ -91,6 +100,19 @@ def install_chatterbox_accent_factorization(model_class=None) -> dict:
             if style_path.resolve() == identity_path.resolve()
             else librosa.resample(style_24k, orig_sr=S3GEN_SR, target_sr=S3_SR)
         )
+        style_start_24k = int(round(prompt_offset_seconds * S3GEN_SR))
+        style_start_16k = int(round(prompt_offset_seconds * S3_SR))
+        style_prompt_24k = style_24k[
+            style_start_24k : style_start_24k + int(self.DEC_COND_LEN)
+        ]
+        style_prompt_16k = style_16k[
+            style_start_16k : style_start_16k + int(self.ENC_COND_LEN)
+        ]
+        if len(style_prompt_24k) < 12_000 or len(style_prompt_16k) < 8_000:
+            raise ValueError(
+                "Accent/style guide is too short after the selected start time. "
+                "Choose an earlier offset or provide a longer recording."
+            )
 
         # T3 speaker vector is derived only from the narrator identity recording.
         ve_embed = torch.from_numpy(
@@ -103,7 +125,7 @@ def install_chatterbox_accent_factorization(model_class=None) -> dict:
         if plen := self.t3.hp.speech_cond_prompt_len:
             s3_tokzr = self.s3gen.tokenizer
             t3_cond_prompt_tokens, _ = s3_tokzr.forward(
-                [style_16k[: self.ENC_COND_LEN]],
+                [style_prompt_16k],
                 max_len=plen,
             )
             t3_cond_prompt_tokens = torch.atleast_2d(t3_cond_prompt_tokens).to(self.device)
@@ -115,7 +137,6 @@ def install_chatterbox_accent_factorization(model_class=None) -> dict:
         ).to(device=self.device)
 
         # S3Gen's acoustic prompt tokens/features come from the style guide.
-        style_prompt_24k = style_24k[: self.DEC_COND_LEN]
         s3gen_ref_dict = self.s3gen.embed_ref(
             style_prompt_24k,
             S3GEN_SR,
@@ -146,6 +167,7 @@ def install_chatterbox_accent_factorization(model_class=None) -> dict:
         min_p=0.05,
         top_p=1.0,
         accent_prompt_path=None,
+        accent_prompt_start_seconds: float = 0.0,
     ):
         """Upstream generate API plus optional separate accent/style reference."""
         if accent_prompt_path and not audio_prompt_path:
@@ -158,6 +180,7 @@ def install_chatterbox_accent_factorization(model_class=None) -> dict:
                 audio_prompt_path,
                 exaggeration=exaggeration,
                 accent_prompt_path=accent_prompt_path,
+                accent_prompt_start_seconds=accent_prompt_start_seconds,
             )
             # Conditionals are prepared above; let the original generator use them
             # without preparing again from a single reference.
