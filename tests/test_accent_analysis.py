@@ -375,3 +375,65 @@ def test_checkpoint_downloader_fails_clearly_after_two_bad_downloads(tmp_path, m
     assert len(calls) == 2
     assert calls[1]["force_download"] is True
 
+def test_checkpoint_downloader_removes_stale_legacy_hub_cache(tmp_path, monkeypatch):
+    import hashlib
+
+    payload = b"replacement checkpoint"
+    monkeypatch.setattr(accent, "ACCENTCL_CHECKPOINT_SIZE_BYTES", len(payload))
+    monkeypatch.setattr(
+        accent, "ACCENTCL_CHECKPOINT_SHA256", hashlib.sha256(payload).hexdigest()
+    )
+    legacy_cache = tmp_path / (
+        "models--" + accent.ACCENTCL_MODEL_REPO.replace("/", "--")
+    )
+    legacy_snapshot = (
+        legacy_cache / "snapshots" / accent.ACCENTCL_CHECKPOINT_REVISION
+    )
+    legacy_snapshot.mkdir(parents=True)
+    (legacy_snapshot / accent.ACCENTCL_CHECKPOINT).write_bytes(b"partial old cache")
+    calls = []
+
+    def fake_download(**kwargs):
+        calls.append(kwargs.copy())
+        destination = Path(kwargs["local_dir"]) / kwargs["filename"]
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(payload)
+        return str(destination)
+
+    result = accent.download_verified_accent_checkpoint(
+        tmp_path, downloader=fake_download
+    )
+
+    assert Path(result).read_bytes() == payload
+    assert not legacy_cache.exists()
+    assert len(calls) == 1
+    assert calls[0]["force_download"] is False
+
+
+def test_checkpoint_downloader_reuses_verified_legacy_hub_cache(tmp_path, monkeypatch):
+    import hashlib
+
+    payload = b"previously downloaded exact artifact"
+    monkeypatch.setattr(accent, "ACCENTCL_CHECKPOINT_SIZE_BYTES", len(payload))
+    monkeypatch.setattr(
+        accent, "ACCENTCL_CHECKPOINT_SHA256", hashlib.sha256(payload).hexdigest()
+    )
+    legacy_cache = tmp_path / (
+        "models--" + accent.ACCENTCL_MODEL_REPO.replace("/", "--")
+    )
+    legacy_snapshot = (
+        legacy_cache / "snapshots" / accent.ACCENTCL_CHECKPOINT_REVISION
+    )
+    legacy_snapshot.mkdir(parents=True)
+    expected = legacy_snapshot / accent.ACCENTCL_CHECKPOINT
+    expected.write_bytes(payload)
+
+    def unexpected_download(**kwargs):
+        raise AssertionError("A verified legacy cache should be reused.")
+
+    result = accent.download_verified_accent_checkpoint(
+        tmp_path, downloader=unexpected_download
+    )
+
+    assert Path(result) == expected
+
