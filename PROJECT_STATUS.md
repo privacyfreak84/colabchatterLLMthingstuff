@@ -207,6 +207,24 @@ The Audiobook Jobs tab now has an optional **Custom output-name prefix**:
 - Automated verification: **175 tests passed** on the notebook/helper implementation, including unsafe-name rejection, chunk/section/master/ZIP filenames, resume-name preservation, and notebook/UI wiring. Workflow run [152](https://github.com/privacyfreak84/colabchatterLLMthingstuff/actions/runs/42471448428).
 - Not yet tested: a live Colab session generating WAVs with a custom name, resuming after a runtime reset, rerendering, and confirming that Accent Check lists the custom-named masters. CI uses synthetic WAVs and static notebook checks, not live Chatterbox synthesis.
 
+### Chatterbox English accent drift research and source patch (2026-11-08)
+
+The third notebook now applies a pinned source overlay to the loaded Chatterbox Multilingual V3 class. The overlay gives the model two independent conditioning inputs: a narrator identity recording and an optional same-language accent/style guide. The narrator supplies the VoiceEncoder and S3Gen speaker embeddings; the guide supplies T3 speech-prompt tokens and S3Gen speech-token/mel context. The option is wired into both Quick TTS and Audiobook Jobs. With the guide blank, the standard one-reference path is retained.
+
+**Root-cause findings are documented in** [docs/chatterbox-accent-root-cause.md](docs/chatterbox-accent-root-cause.md):
+
+- The exact pinned source (resemble-ai/chatterbox@5de7a54...) supports one `en` language tag; it has no `en-US` or `en-GB` locale, dialect embedding, or regional English selector.
+- The same reference recording feeds speaker identity embeddings and acoustic speech prompts in both T3 and S3Gen. Those streams therefore do not cleanly separate speaker identity from accent/pronunciation style.
+- T3 samples speech tokens with `torch.multinomial`; generation can vary between learned English realizations. This is a plausible contributor to intermittency, not a proven isolated cause.
+- Resemble's June 2026 V3 release article explicitly lists accent drift among the problems targeted during training. Its dialect-specific packs are for Portuguese and Spanish variants, not US/UK English.
+- Upstream issue [#267](https://github.com/resemble-ai/chatterbox/issues/267) reports intermittent British-accent generations, including a roughly one-in-five report. It remains without a recorded fix.
+
+**Source patch:** `tools/chatterbox_accent_factorization.py`, version 1.0.0, commit `85bab9a56c7fae2768ea06090e7d47e532372c94`. It changes inference conditioning, not the weights. A second same-language US-English guide can steer the acoustic prompts while retaining the narrator's identity embeddings. It is a source-level factorization, not post-processing. A different guide speaker can still affect delivery/timbre through the acoustic prompt, so this has to be evaluated by listening.
+
+**Verification:** 178 tests passed after the first integration in workflow [164](https://github.com/privacyfreak84/colabchatterLLMthingstuff/actions/runs/42473885505). The Quick TTS integration and an extra callback-wiring test have since been added; the latest run must be checked before reporting its final count. The tests use synthetic/fake model components and static notebook checks. They do not load the real V3 checkpoint or synthesize audio.
+
+**Not resolved / not claimed:** there is no evidence yet that British-sounding output has been eliminated. The source patch has not had a live Colab GPU listening evaluation. The general checkpoint has no dialect control token. A hard US-English guarantee would require region-conditioned US/UK checkpoints or suitable retraining/fine-tuning with region-labelled speech and objective/human evaluation. No retraining has been started.
+
 ## Immediate next action
 
 **Single next action:** smoke-test the updated Audiobook Jobs UI in Colab using a short two-section text file. Set a custom output-name prefix, preview it, select only one section, synthesize it, verify the prefixed chunk/section WAVs, prefixed `selected_sections_master.wav`, and prefixed delivery ZIP, then rerender a chunk and the section. Resume once with the prefix field blank to confirm the saved name is reused. Repeat with a searchable PDF using the same first/last page to test single-page selection. This validates selection, naming, replacement, and resume behavior before any long audiobook run.
