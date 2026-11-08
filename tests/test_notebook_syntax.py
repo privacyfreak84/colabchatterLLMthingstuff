@@ -476,3 +476,65 @@ def test_non_pdf_inputs_expose_paragraph_range_controls():
     assert "selected_paragraph_start" in batch
     assert "selected_paragraph_end" in batch
     assert "TXT/Markdown/pasted text has no inherent page numbers" in batch
+
+
+
+def test_pitch_preserving_speech_rate_control_is_wired_to_quick_and_audiobook_generation():
+    notebook = load_notebook()
+    sources = code_sources(notebook)
+    quick = next(source for source in sources if "def generate_speech(" in source)
+    batch = next(source for source in sources if "def run_audiobook_job(" in source)
+    ui = next(source for source in sources if 'with gr.Blocks(' in source)
+    helper_loader = next(source for source in sources if "SPEECH_RATE_HELPER_COMMIT" in source)
+
+    assert 'SPEECH_RATE_HELPER_COMMIT = "cbbbe10084b5a2af6c5297a9b335e44f20d0f3c8"' in helper_loader
+    assert "speech_rate.adjust_speech_rate(" in quick
+    assert "speech_rate.adjust_speech_rate(" in batch
+    assert '"speech_rate": speech_rate_value' in quick
+    assert '"speech_rate": speech_rate_value' in batch
+    assert '"speech_rate_processor": speech_rate.PROCESSOR_ID' in batch
+    assert "model_duration_seconds" in quick and "model_duration_seconds" in batch
+    assert "0.85x = slower" in ui
+    assert "does not lower the voice pitch or add reverb/echo" in ui
+    assert "Use a new Job ID to create" in ui
+
+    quick_tree = ast.parse(quick)
+    quick_callback = next(
+        node for node in quick_tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "generate_speech"
+    )
+    quick_arg_names = [arg.arg for arg in quick_callback.args.args]
+    assert quick_arg_names[quick_arg_names.index("conditioning_profile") + 1] == "speech_rate_value"
+
+    batch_tree = ast.parse(batch)
+    batch_callback = next(
+        node for node in batch_tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "run_audiobook_job"
+    )
+    batch_arg_names = [arg.arg for arg in batch_callback.args.args]
+    assert batch_arg_names[batch_arg_names.index("conditioning_profile") + 1] == "speech_rate_value"
+
+    ui_tree = ast.parse(ui)
+    quick_click = next(
+        node for node in ast.walk(ui_tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "click"
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "generate_button"
+    )
+    quick_inputs = next(keyword.value for keyword in quick_click.keywords if keyword.arg == "inputs")
+    quick_names = [item.id for item in quick_inputs.elts]
+    assert quick_names[quick_names.index("conditioning_profile_input") + 1] == "speech_rate_input"
+
+    batch_click = next(
+        node for node in ast.walk(ui_tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "click"
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "run_batch_button"
+    )
+    batch_inputs = next(keyword.value for keyword in batch_click.keywords if keyword.arg == "inputs")
+    batch_names = [item.id for item in batch_inputs.elts]
+    assert batch_names[batch_names.index("batch_conditioning_profile_input") + 1] == "batch_speech_rate_input"
