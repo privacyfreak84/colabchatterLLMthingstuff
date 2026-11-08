@@ -665,7 +665,7 @@ def test_audiobook_and_accent_helpers_are_pinned_to_current_validated_implementa
         and "ACCENT_ANALYSIS_HELPER_COMMIT" in source
     )
 
-    expected_commit = "90c6070f4520cceee7fe475e16ad3485aee13989"
+    expected_commit = "7265c3b692c82785b8b900685096e74b8fcebf54"
     assert f'AUDIOBOOK_HELPER_COMMIT = "{expected_commit}"' in batch
     assert f'ACCENT_ANALYSIS_HELPER_COMMIT = "{expected_commit}"' in batch
 
@@ -683,4 +683,50 @@ def test_audiobook_and_accent_helpers_are_pinned_to_current_validated_implementa
     assert "ACCENTCL_CHECKPOINT_SIZE_BYTES" in accent_source
     assert "ACCENTCL_CHECKPOINT_SHA256" in accent_source
     assert "def load_verified_accent_checkpoint(" in accent_source
+
+def test_saved_chunk_rerender_picker_exposes_exact_chunk_choices_and_keeps_selection_only():
+    notebook = load_notebook()
+    sources = code_sources(notebook)
+    batch = sources[5]
+    ui = sources[6]
+
+    assert "def refresh_rerender_chunk_choices(" in batch
+    assert "longform.verify_chunk_wav(" in batch
+    assert "chunk.get(\"text\", \"\")" in batch
+    assert "complete, verified" in batch
+    assert "complete, WAV needs repair" in batch
+    assert "whole section" in batch
+    assert "rerender_values = list(rerender_chunk_ids)" in batch
+
+    # The UI presents IDs as a real multiselect rather than requiring manual typing.
+    assert "batch_rerender_ids_input = gr.Dropdown(" in ui
+    assert "multiselect=True" in ui
+    assert "batch_rerender_refresh_button = gr.Button(" in ui
+    assert "batch_rerender_refresh_button.click(" in ui
+    assert "inputs=[batch_job_id_input]" in ui
+    assert "Only the selected chunks are regenerated" in ui
+
+    ui_tree = ast.parse(ui)
+    refresh_click = next(
+        node for node in ast.walk(ui_tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "click"
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "batch_rerender_refresh_button"
+    )
+    outputs = next(k.value for k in refresh_click.keywords if k.arg == "outputs")
+    assert isinstance(outputs, ast.List) and len(outputs.elts) == 2
+
+    run_click = next(
+        node for node in ast.walk(ui_tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "click"
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "run_batch_button"
+    )
+    inputs = next(k.value for k in run_click.keywords if k.arg == "inputs")
+    assert isinstance(inputs, ast.List)
+    assert "batch_rerender_ids_input" in [item.id for item in inputs.elts]
 
