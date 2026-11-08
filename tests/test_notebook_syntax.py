@@ -228,7 +228,7 @@ def test_preview_callback_returns_plan_and_cleaned_text_preview():
         node for node in batch_tree.body
         if isinstance(node, ast.FunctionDef) and node.name == "preview_audiobook_plan"
     )
-    assert len(preview_function.args.args) == 9
+    assert len(preview_function.args.args) == 10
 
     ui_tree = ast.parse(ui_source)
     preview_click = next(
@@ -241,7 +241,7 @@ def test_preview_callback_returns_plan_and_cleaned_text_preview():
     )
     outputs = next(keyword.value for keyword in preview_click.keywords if keyword.arg == "outputs")
     assert isinstance(outputs, ast.List)
-    assert len(outputs.elts) == 2
+    assert len(outputs.elts) == 3
 
 
 def test_gradio_ui_has_no_login_authentication():
@@ -308,3 +308,70 @@ def test_accent_analysis_ui_event_input_and_output_arities_match_callback():
     outputs = next(keyword.value for keyword in analyse_click.keywords if keyword.arg == "outputs")
     assert isinstance(inputs, ast.List) and len(inputs.elts) == len(callback.args.args) - 1
     assert isinstance(outputs, ast.List) and len(outputs.elts) == 4
+
+
+def test_section_selection_and_atomic_rerender_controls_are_wired_into_batch_ui():
+    notebook = load_notebook()
+    sources = code_sources(notebook)
+    batch = sources[5]
+    ui = sources[6]
+    all_text = "\n".join(
+        "".join(cell.get("source", []))
+        for cell in notebook["cells"]
+    )
+
+    assert "selected_section_ids" in batch
+    assert "longform.filter_plan_sections(" in batch
+    assert "preserve_previous_renders" in batch
+    assert "preserve_previous=bool(preserve_previous_renders)" in batch
+    assert "chunk_ids_by_section" in batch
+    assert "Unknown chunk/section ID" in batch
+    assert "pending_replacement = chunk.pop(" in batch
+    assert 'section_selection_input = gr.Dropdown(' in ui
+    assert "multiselect=True" in ui
+    assert 'label="Sections to speak (preview the source first; empty = all sections)"' in ui
+    assert "batch_keep_previous_renders_input" in ui
+    assert "selected_sections_master.wav" in all_text
+    assert "atomically replaces the old active file" in all_text.lower()
+
+
+def test_section_selection_generator_and_preview_ui_arities_match():
+    notebook = load_notebook()
+    sources = code_sources(notebook)
+    batch_tree = ast.parse(sources[5])
+    ui_tree = ast.parse(sources[6])
+
+    generator = next(
+        node for node in batch_tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "run_audiobook_job"
+    )
+    batch_click = next(
+        node for node in ast.walk(ui_tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "click"
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "run_batch_button"
+    )
+    batch_inputs = next(k.value for k in batch_click.keywords if k.arg == "inputs")
+    assert isinstance(batch_inputs, ast.List)
+    assert len(batch_inputs.elts) == len(generator.args.args) - 1
+
+    preview = next(
+        node for node in batch_tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "preview_audiobook_plan"
+    )
+    preview_click = next(
+        node for node in ast.walk(ui_tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "click"
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "preview_button"
+    )
+    preview_inputs = next(k.value for k in preview_click.keywords if k.arg == "inputs")
+    preview_outputs = next(k.value for k in preview_click.keywords if k.arg == "outputs")
+    assert isinstance(preview_inputs, ast.List)
+    assert isinstance(preview_outputs, ast.List)
+    assert len(preview_inputs.elts) == len(preview.args.args)
+    assert len(preview_outputs.elts) == 3
