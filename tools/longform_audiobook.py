@@ -284,6 +284,27 @@ def slugify(value: str, max_length: int = 48) -> str:
     return (slug[:max_length].strip("-") or "section")
 
 
+def safe_output_name(value: str | None = None) -> str | None:
+    """Validate an optional filename prefix without allowing paths or unsafe names."""
+    candidate = (value or "").strip()
+    if not candidate:
+        return None
+    if len(candidate) > 96:
+        raise ValueError("Custom output name must be 96 characters or fewer.")
+    if candidate in {".", ".."} or re.search(r'[<>:"/\\|?*\x00-\x1f]', candidate):
+        raise ValueError("Custom output name must be a filename only, without folders or characters \\< \\> : \\" / \\ | ? *.")
+    if candidate.endswith((".", " ")):
+        raise ValueError("Custom output name cannot end with a period or space.")
+    reserved = candidate.split(".", 1)[0].upper()
+    if reserved in {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)), *(f"LPT{i}" for i in range(1, 10))}:
+        raise ValueError("Custom output name uses a reserved filename.")
+    return candidate
+
+
+def _prefixed_stem(prefix: str | None, stem: str) -> str:
+    return f"{prefix}_{stem}" if prefix else stem
+
+
 def _heading_title(line: str) -> str | None:
     stripped = line.strip()
     if not stripped:
@@ -768,9 +789,11 @@ def create_or_resume_job(
     base_seed: int,
     source_pdf_bytes: bytes | None = None,
     pdf_extraction_report: dict | None = None,
+    output_name: str | None = None,
 ) -> tuple[Path, dict, bool]:
     """Create a job or safely reopen one only when source, plan, and settings match."""
     resolved_id = safe_job_id(job_id)
+    resolved_output_name = safe_output_name(output_name)
     root = Path(jobs_root) / resolved_id
     root.mkdir(parents=True, exist_ok=True)
     source_path = root / "source.txt"
@@ -794,6 +817,13 @@ def create_or_resume_job(
 
     if manifest_path.exists():
         manifest = read_manifest(root)
+        saved_output_name = safe_output_name(manifest.get("output_name"))
+        if resolved_output_name not in (None, saved_output_name):
+            raise ValueError(
+                "This Job ID already uses a different custom output name. "
+                "Leave the field blank or enter the saved name; use a new Job ID to rename outputs."
+            )
+        manifest.setdefault("output_name", saved_output_name)
         if manifest.get("source_sha256") != source_hash:
             raise ValueError("This job ID already belongs to different manuscript text. Use a new job ID.")
         if manifest.get("source_pdf_sha256") != source_pdf_hash:
@@ -847,7 +877,8 @@ def create_or_resume_job(
     for planned in plan["chunks"]:
         item = dict(planned)
         item["status"] = "pending"
-        item["wav_relpath"] = f"chunks/{item['chunk_id'].lower()}.wav"
+        chunk_stem = _prefixed_stem(resolved_output_name, item["chunk_id"].lower())
+        item["wav_relpath"] = f"chunks/{chunk_stem}.wav"
         item["seed"] = (
             int(base_seed) + int(item["chunk_index"]) - 1
             if int(base_seed) >= 0
@@ -858,6 +889,7 @@ def create_or_resume_job(
     manifest = {
         "schema_version": MANIFEST_SCHEMA_VERSION,
         "job_id": resolved_id,
+        "output_name": resolved_output_name,
         "status": "planned",
         "created_at_utc": utc_now(),
         "updated_at_utc": utc_now(),
@@ -950,6 +982,7 @@ def assemble_job_masters(job_dir: str | Path, manifest: dict, sample_rate: int =
     if incomplete:
         raise ValueError("Cannot assemble masters; incomplete or invalid chunks: " + ", ".join(incomplete[:12]))
 
+    output_name = safe_output_name(manifest.get("output_name"))
     sections_out = []
     full_paths: list[Path] = []
     full_pauses: list[float] = []
@@ -963,7 +996,8 @@ def assemble_job_masters(job_dir: str | Path, manifest: dict, sample_rate: int =
             float(item["pause_after_seconds"]) if i < len(section_chunks) - 1 else 0.0
             for i, item in enumerate(section_chunks)
         ]
-        filename = f"{section['section_id'].lower()}_{slugify(section['title'])}.wav"
+        section_stem = f"{section['section_id'].lower()}_{slugify(section['title'])}"
+        filename = _prefixed_stem(output_name, section_stem) + ".wav"
         section_path = root / "sections" / filename
         info = assemble_wav(paths, pauses, section_path, sample_rate=sample_rate)
         sections_out.append({
@@ -984,7 +1018,8 @@ def assemble_job_masters(job_dir: str | Path, manifest: dict, sample_rate: int =
         or len(selected_ids) == all_section_count
         or plan_info.get("selection_mode") == "all"
     )
-    master_filename = "whole_book_master.wav" if is_full_selection else "selected_sections_master.wav"
+    master_stem = "whole_book_master" if is_full_selection else "selected_sections_master"
+    master_filename = _prefixed_stem(output_name, master_stem) + ".wav"
     master_path = root / master_filename
     master_info = assemble_wav(full_paths, full_pauses, master_path, sample_rate=sample_rate)
     artifacts = {
@@ -1216,7 +1251,9 @@ def create_job_bundle(job_dir: str | Path) -> Path:
     manifest = read_manifest(root)
     if manifest.get("status") != "complete":
         raise ValueError("The audiobook job is not complete; finish all chunks before packaging.")
-    bundle = root / "audiobook_delivery_bundle.zip"
+    output_name = safe_output_name(manifest.get("output_name"))
+    bundle_name = _prefixed_stem(output_name, "audiobook_delivery_bundle") + ".zip"
+    bundle = root / bundle_name
     temporary = bundle.with_suffix(".zip.partial")
     with zipfile.ZipFile(temporary, "w", compression=zipfile.ZIP_STORED, allowZip64=True) as archive:
         master_relative = (
