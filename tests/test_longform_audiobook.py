@@ -336,7 +336,8 @@ def test_pdf_extraction_reports_page_text_and_normalizes_line_breaks(tmp_path):
     canvas_obj.save()
 
     extracted = extract_pdf_manuscript(pdf_path)
-    assert extracted["page_count"] == 2
+    assert extracted["total_pdf_pages"] == 2
+    assert extracted["selected_page_count"] == 2
     assert extracted["pdf_sha256"]
     assert extracted["extraction_method"].startswith("pypdf")
     assert "Avalokiteshvara said to the Buddha" in extracted["text"]
