@@ -202,7 +202,14 @@ def extract_pdf_manuscript(
             "char_start": char_start,
             "char_end": char_end,
         })
-        cursor = char_end + (1 if index < len(nonempty_pages) - 1 else 0)
+        joins_to_next_without_separator = (
+            index < len(nonempty_pages) - 1
+            and page_text.rstrip().endswith("-")
+        )
+        cursor = char_end + (
+            0 if joins_to_next_without_separator else
+            1 if index < len(nonempty_pages) - 1 else 0
+        )
 
     empty_pages = [
         item["page"] for item in page_records
@@ -687,8 +694,12 @@ def create_or_resume_job(
                 chunk["error"] = "Saved audio missing or failed integrity verification; scheduled for regeneration."
         if not source_path.exists():
             source_path.write_text(source_text, encoding="utf-8")
-        if source_pdf_bytes is not None and not (root / "source_original.pdf").exists():
-            (root / "source_original.pdf").write_bytes(source_pdf_bytes)
+        if source_pdf_bytes is not None:
+            original_pdf = root / "source_original.pdf"
+            if original_pdf.exists() and sha256_file(original_pdf) != source_pdf_hash:
+                raise ValueError("The archived original PDF is corrupt or does not match the uploaded PDF.")
+            if not original_pdf.exists():
+                original_pdf.write_bytes(source_pdf_bytes)
         write_manifest(root, manifest)
         append_job_event(root, "job_resumed", "Reopened saved job after verifying source, settings, plan, and completed chunk files.", details={"resume_count": manifest["resume_count"]})
         return root, manifest, True
