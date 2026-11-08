@@ -308,3 +308,20 @@ Then complete Pass 6: the reversible text-to-spoken-form mapping for all 13 term
 - Hindi source quality, English voice similarity, pacing, and audible artifacts must be judged separately.
 - Do not approve any pronunciation or start full-book synthesis without explicit human review.
 - Update this file at the end of every meaningful engineering/research pass, including what was executed, what was listened to, what passed/failed, and the single next action.
+
+## Initial audiobook stream-update fix (2026-11-08)
+
+A live audiobook job failed immediately after job creation with `UnboundLocalError: latest_audio_path`, before Chatterbox generated the first chunk.
+
+**Root cause:** the generator's initial Gradio update yielded `latest_audio_path` before the variable was assigned. The lookup for an already-completed chunk was below that first yield, so a new job failed at startup.
+
+**Fix:** moved the completed-chunk count and verified latest-WAV lookup above the first yield. A new job now sends `None` to the player until its first chunk completes; a resumed job initializes the player with its latest valid completed chunk. No synthesis or audio-processing logic changed.
+
+**Regression coverage:** added a notebook AST test asserting that the first assignment to `latest_audio_path` precedes the first generator yield.
+
+**Verification:** CI workflow [213](https://github.com/privacyfreak84/colabchatterLLMthingstuff/actions/runs/42505847558) passed **200 tests** on commit `9c4c81aec21d6d5a91d149ba18a10aee27dece77`.
+
+**Not yet verified:** retrying the job in a live Colab runtime and confirming playback of the first generated chunk. The failed run stopped before the first chunk was synthesized. Reuse the same Job ID only with the same manuscript, page/section selection, narrator/accent references, and generation settings; the resume helper checks these identities before continuing.
+
+**Next action:** reload the corrected notebook code in Colab and retry the short pilot with the same Job ID and unchanged settings. If Drive persistence was off and the runtime was reset, the old job folder is gone; recreate it with the same Job ID and inputs.
+
