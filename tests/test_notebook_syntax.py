@@ -657,3 +657,30 @@ def test_latest_audio_player_path_is_initialized_before_first_streamed_update():
         "otherwise a new job fails before the first chunk is generated"
     )
 
+def test_audiobook_and_accent_helpers_are_pinned_to_current_validated_implementations():
+    notebook = load_notebook()
+    batch = next(
+        source for source in code_sources(notebook)
+        if "AUDIOBOOK_HELPER_COMMIT" in source
+        and "ACCENT_ANALYSIS_HELPER_COMMIT" in source
+    )
+
+    expected_commit = "90c6070f4520cceee7fe475e16ad3485aee13989"
+    assert f'AUDIOBOOK_HELPER_COMMIT = "{expected_commit}"' in batch
+    assert f'ACCENT_ANALYSIS_HELPER_COMMIT = "{expected_commit}"' in batch
+
+    # The local source-of-truth helpers must contain the APIs and verification
+    # used by those immutable notebook pins.
+    longform_source = (
+        REPO_ROOT / "tools" / "longform_audiobook.py"
+    ).read_text(encoding="utf-8")
+    accent_source = (
+        REPO_ROOT / "tools" / "accent_analysis.py"
+    ).read_text(encoding="utf-8")
+
+    assert "def assemble_selected_chunk_wavs(" in longform_source
+    assert "ACCENTCL_CHECKPOINT_REVISION" in accent_source
+    assert "ACCENTCL_CHECKPOINT_SIZE_BYTES" in accent_source
+    assert "ACCENTCL_CHECKPOINT_SHA256" in accent_source
+    assert "def load_verified_accent_checkpoint(" in accent_source
+
