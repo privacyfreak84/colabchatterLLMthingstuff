@@ -91,6 +91,7 @@ The pace-oriented preset (exaggeration=0.7, cfg_weight=0.3) is an experiment inf
 - Generate and checkpoint each chunk independently.
 - Reuse verified outputs; retry only failed or invalid chunks.
 - Never allow an experimental pronunciation change to mutate the approved source manuscript.
+- The separate custom-text notebook now offers partial source selection: one-based PDF page ranges, one-based blank-line paragraph ranges for TXT/Markdown/pasted text, and multi-select detected sections. This convenience workflow does not unlock the document-first approval gate.
 
 ## Pass 8 — QA, mastering, and export
 
@@ -99,6 +100,8 @@ The pace-oriented preset (exaggeration=0.7, cfg_weight=0.3) is an experiment inf
 - Reconcile every audio chunk against the approved manuscript.
 - Run duration, file-integrity, silence, clipping, discontinuity, duplicate, and missing-chunk checks.
 - Optionally run a spoiler-free regional accent scan over finished WAV/MP3 audio. The standalone notebook implements AccentCL timestamp windows and transcript-free reports; validate its predictions on actual Chatterbox narration before relying on it, and retain human listening review.
+- Use the standalone notebook's chunk/section rerender controls to replace defective portions without regenerating good portions. Replacement is atomic and old WAVs are backed up only when the optional backup setting is enabled.
+- Rebuild individual section masters and one combined WAV after generation or rerender: `whole_book_master.wav` for the full source or `selected_sections_master.wav` for a deliberately selected subset.
 - Listen to chapter transitions, flagged chunks, and representative samples.
 - Assemble chapter masters and the complete audiobook.
 - Export the agreed listening format and verify playback from beginning to end.
