@@ -3,7 +3,7 @@
 **Research date:** 2026-11-08  
 **Exact inference source revision:** `resemble-ai/chatterbox@5de7a54aa4e5e2baadb0182dde554908b48b85c2`  
 **Checkpoint family:** `ResembleAI/chatterbox`, Multilingual V3  
-**Project patch:** `tools/chatterbox_accent_factorization.py`, version `1.0.0`
+**Project patch:** `tools/chatterbox_accent_factorization.py`, version `1.1.0`
 
 ## Executive finding
 
