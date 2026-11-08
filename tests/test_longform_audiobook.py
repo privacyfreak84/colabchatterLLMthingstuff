@@ -10,6 +10,7 @@ import soundfile as sf
 from tools.longform_audiobook import (
     append_job_event,
     assemble_job_masters,
+    assemble_selected_chunk_wavs,
     assemble_wav,
     build_audio_qa_report,
     create_job_bundle,
@@ -159,7 +160,7 @@ def test_logs_are_append_only_and_readable(tmp_path):
     assert [event["event"] for event in events] == ["job_started", "chunk_complete"]
 
 
-def test_streaming_assembly_and_full_job_bundle(tmp_path):
+def test_user_selected_wav_assembly_and_bundle_include_only_on_demand_master(tmp_path):
     source = "Preface\n\nFirst sentence. Second sentence.\n\nChapter One\n\nFinal paragraph."
     plan = plan_audiobook_chunks(source, max_chars=120)
     root, manifest, _ = create_or_resume_job(
@@ -167,22 +168,45 @@ def test_streaming_assembly_and_full_job_bundle(tmp_path):
         plan=plan, generation_config={"voice": "test"}, base_seed=12,
     )
 
-    for chunk in manifest["chunks"]:
+    for index, chunk in enumerate(manifest["chunks"]):
         wav_path = root / chunk["wav_relpath"]
         wav_path.parent.mkdir(parents=True, exist_ok=True)
-        sf.write(wav_path, np.full(2400, 0.1, dtype=np.float32), 24000, subtype="PCM_16")
+        sf.write(
+            wav_path,
+            np.full(2400, 0.1 * (index + 1), dtype=np.float32),
+            24000,
+            subtype="PCM_16",
+        )
         from tools.longform_audiobook import sha256_file
         chunk["status"] = "complete"
         chunk["wav_sha256"] = sha256_file(wav_path)
         chunk["duration_seconds"] = 0.1
+    manifest["status"] = "complete"
     write_manifest(root, manifest)
 
-    artifacts = assemble_job_masters(root, manifest)
-    assert manifest["status"] == "complete"
-    assert Path(root / artifacts["whole_book_master"]["relpath"]).is_file()
-    assert len(artifacts["section_masters"]) == 2
-    for section in artifacts["section_masters"]:
-        assert Path(root / section["relpath"]).is_file()
+    selected_ids = [manifest["chunks"][-1]["chunk_id"], manifest["chunks"][0]["chunk_id"]]
+    selected = assemble_selected_chunk_wavs(
+        root,
+        manifest,
+        selected_ids,
+        output_name="chosen",
+    )
+    assert selected["selected_chunk_ids"] == [
+        manifest["chunks"][0]["chunk_id"],
+        manifest["chunks"][-1]["chunk_id"],
+    ]
+    selected_path = root / selected["relpath"]
+    assert selected_path.is_file()
+    with sf.SoundFile(selected_path) as audio:
+        # Two 0.1-second clips, plus the first selected chunk's saved join pause.
+        assert audio.frames >= 4800
+
+    all_audio = assemble_selected_chunk_wavs(
+        root, manifest, include_all_completed=True
+    )
+    assert all_audio["include_all_completed"] is True
+    assert all_audio["chunk_count"] == len(manifest["chunks"])
+    assert len(manifest["assemblies"]) == 2
 
     report = build_audio_qa_report(root, manifest)
     assert report["technical_integrity_pass"] is True
@@ -195,9 +219,42 @@ def test_streaming_assembly_and_full_job_bundle(tmp_path):
         names = set(archive.namelist())
     assert "source.txt" in names
     assert "manifest.json" in names
-    assert "whole_book_master.wav" in names
     assert "qa_report.json" in names
     assert any(name.startswith("chunks/") for name in names)
+    assert any(name.startswith("assemblies/") for name in names)
+    assert "whole_book_master.wav" not in names
+
+
+def test_selected_wav_assembly_rejects_empty_unknown_and_invalid_selections(tmp_path):
+    source = "One short sentence."
+    plan = plan_audiobook_chunks(source)
+    root, manifest, _ = create_or_resume_job(
+        tmp_path, "assembly-validation", source_text=source, source_name="book.txt",
+        plan=plan, generation_config={"voice": "test"}, base_seed=12,
+    )
+    chunk = manifest["chunks"][0]
+    wav_path = root / chunk["wav_relpath"]
+    sf.write(wav_path, np.zeros(2400, dtype=np.float32), 24000, subtype="PCM_16")
+    from tools.longform_audiobook import sha256_file
+    chunk.update({
+        "status": "complete",
+        "wav_sha256": sha256_file(wav_path),
+        "duration_seconds": 0.1,
+    })
+    write_manifest(root, manifest)
+
+    import pytest
+    with pytest.raises(ValueError, match="Select one or more"):
+        assemble_selected_chunk_wavs(root, manifest)
+    with pytest.raises(ValueError, match="Unknown chunk ID"):
+        assemble_selected_chunk_wavs(root, manifest, ["C99999"])
+    with pytest.raises(ValueError, match="all completed chunks"):
+        assemble_selected_chunk_wavs(root, manifest, include_all_completed=True)
+
+    # A completed entry with a modified WAV must not be included in an assembly.
+    wav_path.write_bytes(wav_path.read_bytes() + b"modified")
+    with pytest.raises(ValueError, match="incomplete or invalid"):
+        assemble_selected_chunk_wavs(root, manifest, ["C00001"])
 
 
 def test_assemble_wav_rejects_mismatched_input_format(tmp_path):
