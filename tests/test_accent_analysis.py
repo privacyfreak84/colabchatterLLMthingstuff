@@ -205,14 +205,67 @@ def test_markdown_report_is_timestamped_and_has_no_transcript_or_source_text(tmp
     assert "The Buddha speaks" not in markdown
 
 
-def test_accent_model_loader_is_pinned_and_uses_safe_torch_loading():
+def test_accent_model_loader_pins_source_and_checkpoint_artifacts():
     import inspect
     source = inspect.getsource(accent.load_accentcl_model)
-    assert "ACCENTCL_COMMIT" in source
     assert len(accent.ACCENTCL_COMMIT) == 40
-    assert "weights_only=True" in source
-    assert "weights_only=False" not in source
+    assert len(accent.ACCENTCL_CHECKPOINT_REVISION) == 40
+    assert len(accent.ACCENTCL_CHECKPOINT_SHA256) == 64
+    assert accent.ACCENTCL_CHECKPOINT_SIZE_BYTES == 2_563_884_656
+    assert "revision=ACCENTCL_CHECKPOINT_REVISION" in source
+    assert "load_verified_accent_checkpoint(" in source
     assert "snapshot_download" in source
     assert "openai/whisper-large-v3" in source
     assert "model_name=str(whisper_path)" in source
-    assert "torch.load" in source
+
+
+def test_legacy_accent_checkpoint_is_deserialized_only_after_hash_verification(tmp_path, monkeypatch):
+    import hashlib
+
+    payload = b"official AccentCL checkpoint fixture"
+    checkpoint_path = tmp_path / "accentcl.pt"
+    checkpoint_path.write_bytes(payload)
+    monkeypatch.setattr(
+        accent, "ACCENTCL_CHECKPOINT_SIZE_BYTES", len(payload)
+    )
+    monkeypatch.setattr(
+        accent, "ACCENTCL_CHECKPOINT_SHA256", hashlib.sha256(payload).hexdigest()
+    )
+
+    calls = {}
+
+    class FakeTorch:
+        @staticmethod
+        def load(path, **kwargs):
+            calls["path"] = path
+            calls["kwargs"] = kwargs
+            return {"label2id": {"north_american": 0}, "model": {"weight": "tensor"}}
+
+    checkpoint = accent.load_verified_accent_checkpoint(
+        checkpoint_path, torch_module=FakeTorch
+    )
+    assert checkpoint["label2id"] == {"north_american": 0}
+    assert calls["kwargs"] == {
+        "map_location": "cpu",
+        "weights_only": False,
+    }
+
+
+def test_unverified_accent_checkpoint_is_never_unpickled(tmp_path, monkeypatch):
+    payload = b"tampered checkpoint"
+    checkpoint_path = tmp_path / "accentcl.pt"
+    checkpoint_path.write_bytes(payload)
+    monkeypatch.setattr(accent, "ACCENTCL_CHECKPOINT_SIZE_BYTES", len(payload))
+    monkeypatch.setattr(accent, "ACCENTCL_CHECKPOINT_SHA256", "0" * 64)
+
+    class FakeTorch:
+        called = False
+
+        @classmethod
+        def load(cls, *args, **kwargs):
+            cls.called = True
+            raise AssertionError("torch.load must not run for an unverified checkpoint")
+
+    with pytest.raises(RuntimeError, match="SHA-256 verification failed"):
+        accent.load_verified_accent_checkpoint(checkpoint_path, torch_module=FakeTorch)
+    assert FakeTorch.called is False
