@@ -406,7 +406,7 @@ def load_accentcl_model(
     """Download pinned model source and load weights using PyTorch safe mode only."""
     import gc
     import torch
-    from huggingface_hub import hf_hub_download
+    from huggingface_hub import hf_hub_download, snapshot_download
 
     if progress_callback:
         progress_callback("Preparing pinned AccentCL source code...")
@@ -453,6 +453,27 @@ def load_accentcl_model(
         raise RuntimeError("Downloaded AccentCL checkpoint is unexpectedly small or incomplete.")
 
     if progress_callback:
+        progress_callback("Downloading Whisper Large v3 files if they are not cached...")
+    whisper_path = snapshot_download(
+        repo_id="openai/whisper-large-v3",
+        cache_dir=str(cache_path / "whisper-hub-cache"),
+        local_dir=str(cache_path / "whisper-large-v3"),
+        allow_patterns=[
+            "*.safetensors",
+            "config.json",
+            "preprocessor_config.json",
+            "tokenizer.json",
+            "tokenizer_config.json",
+            "vocab.json",
+            "merges.txt",
+            "normalizer.json",
+            "special_tokens_map.json",
+            "added_tokens.json",
+            "generation_config.json",
+        ],
+    )
+
+    if progress_callback:
         progress_callback("Loading Whisper Large v3 and the accent classifier...")
     checkpoint = torch.load(
         checkpoint_path, map_location="cpu", weights_only=True,
@@ -464,7 +485,11 @@ def load_accentcl_model(
 
     # Instantiate the upstream architecture, but bypass its unsafe convenience
     # loader, which currently uses unrestricted pickle deserialization.
-    model = WhisperCLAccentModel(num_classes=len(label2id), label2id=label2id)
+    model = WhisperCLAccentModel(
+        num_classes=len(label2id),
+        label2id=label2id,
+        model_name=str(whisper_path),
+    )
     model.load_state_dict(state_dict, strict=True)
     del checkpoint, state_dict
     gc.collect()
