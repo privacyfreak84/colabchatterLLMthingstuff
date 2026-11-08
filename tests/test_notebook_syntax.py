@@ -379,6 +379,20 @@ def test_section_selection_generator_and_preview_ui_arities_match():
     assert len(preview_outputs.elts) == 3
 
 
+def test_custom_output_name_is_wired_through_audiobook_generation_and_accent_scan():
+    notebook = load_notebook()
+    sources = code_sources(notebook)
+    batch = sources[5]
+    ui = sources[6]
+    assert "custom_output_name: str" in batch
+    assert "output_name=(custom_output_name or None)" in batch
+    assert "batch_output_name_input = gr.Textbox(" in ui
+    assert "batch_output_name_input," in ui
+    assert "*/*_whole_book_master.wav" in batch
+    assert "*/*_selected_sections_master.wav" in batch
+    assert "output_name" in batch
+
+
 def test_non_pdf_inputs_expose_paragraph_range_controls():
     notebook = load_notebook()
     sources = code_sources(notebook)
