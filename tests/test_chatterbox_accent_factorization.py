@@ -221,8 +221,8 @@ def test_source_patch_separates_voice_identity_from_accent_prompt(monkeypatch, t
 
     assert np.isclose(np.mean(model.calls["voice_identity"]), 0.2)
     assert np.isclose(np.mean(model.calls["s3_identity"]), 0.2)
-    assert np.isclose(np.mean(model.calls["s3_style"]), 0.8)
-    assert np.isclose(np.mean(model.calls["t3_style"]), 0.8)
+    assert np.isclose(np.mean(model.calls["s3_style"]), 0.5)
+    assert np.isclose(np.mean(model.calls["t3_style"]), 0.5)
     assert np.isclose(
         float(model.conds.t3.speaker_emb.value.mean()), 0.2
     )
