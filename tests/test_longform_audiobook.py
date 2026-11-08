@@ -514,8 +514,8 @@ def test_pdf_source_pages_are_attached_to_planned_chunks():
         ],
     )
     assert plan["source_pages"][0]["page_number"] == 2
-    assert plan["chunks"][0]["source_pages"] == [2]
-    assert plan["chunks"][1]["source_pages"] == [3]
+    # This one chunk crosses the PDF page boundary, so both source pages are recorded.
+    assert plan["chunks"][0]["source_pages"] == [2, 3]
 
 
 def test_pdf_original_is_preserved_in_job_folder_and_delivery_bundle(tmp_path):
