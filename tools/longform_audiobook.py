@@ -292,7 +292,7 @@ def safe_output_name(value: str | None = None) -> str | None:
     if len(candidate) > 96:
         raise ValueError("Custom output name must be 96 characters or fewer.")
     if candidate in {".", ".."} or re.search(r'[<>:"/\\|?*\x00-\x1f]', candidate):
-        raise ValueError("Custom output name must be a filename only, without folders or characters \\< \\> : \\" / \\ | ? *.")
+        raise ValueError("Custom output name must be a plain filename stem; do not use folders or reserved filename characters.")
     if candidate.endswith((".", " ")):
         raise ValueError("Custom output name cannot end with a period or space.")
     reserved = candidate.split(".", 1)[0].upper()
