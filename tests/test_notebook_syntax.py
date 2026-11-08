@@ -137,7 +137,7 @@ def test_longform_batch_workflow_has_resume_logs_and_audiobook_exports():
     assert "inspected_qa_output" in ui
     assert "allowed_paths=[str(LOCAL_OUTPUT_DIR)] + ([str(DRIVE_OUTPUT_DIR)]" in ui
     assert "full-book approval gate" in all_text.lower()
-    quick_helpers = sources[3]
+    quick_helpers = next(source for source in sources if "def split_text_into_chunks" in source)
     assert "longform.normalize_manuscript_text(text)" in quick_helpers
 
 
