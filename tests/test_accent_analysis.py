@@ -213,7 +213,7 @@ def test_accent_model_loader_pins_source_and_checkpoint_artifacts():
     assert len(accent.ACCENTCL_CHECKPOINT_REVISION) == 40
     assert len(accent.ACCENTCL_CHECKPOINT_SHA256) == 64
     assert accent.ACCENTCL_CHECKPOINT_SIZE_BYTES == 2_563_884_656
-    assert "revision=ACCENTCL_CHECKPOINT_REVISION" in download_source
+    assert '"revision": ACCENTCL_CHECKPOINT_REVISION' in download_source
     assert "local_dir" in download_source
     assert "force_download" in download_source
     assert "download_verified_accent_checkpoint(" in source
@@ -407,7 +407,7 @@ def test_checkpoint_downloader_removes_stale_legacy_hub_cache(tmp_path, monkeypa
     assert Path(result).read_bytes() == payload
     assert not legacy_cache.exists()
     assert len(calls) == 1
-    assert calls[0]["force_download"] is False
+    assert calls[0].get("force_download", False) is False
 
 
 def test_checkpoint_downloader_reuses_verified_legacy_hub_cache(tmp_path, monkeypatch):
