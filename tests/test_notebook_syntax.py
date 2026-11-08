@@ -283,7 +283,7 @@ def test_spoiler_free_accent_analysis_is_wired_into_notebook_ui():
     assert "accent_segments_output" in ui
     assert "accent_json_output" in ui and "accent_csv_output" in ui
     assert 'max_file_size="2gb"' in ui
-    assert "No transcription is performed" in all_text
+    assert "without transcribing it" in all_text.lower()
     assert "sentence text" in all_text.lower()
 
 
