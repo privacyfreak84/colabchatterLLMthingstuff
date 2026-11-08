@@ -376,6 +376,20 @@ def test_section_selection_generator_and_preview_ui_arities_match():
     assert isinstance(preview_inputs, ast.List)
     assert isinstance(preview_outputs, ast.List)
     assert len(preview_inputs.elts) == len(preview.args.args)
+    assert [item.id for item in preview_inputs.elts] == [
+        "batch_file_input",
+        "batch_text_input",
+        "pdf_page_start_input",
+        "pdf_page_end_input",
+        "text_paragraph_start_input",
+        "text_paragraph_end_input",
+        "batch_chunk_chars_input",
+        "speak_headings_input",
+        "batch_chunk_pause_input",
+        "batch_paragraph_pause_input",
+        "batch_section_pause_input",
+        "section_selection_input",
+    ]
     assert len(preview_outputs.elts) == 3
 
 
