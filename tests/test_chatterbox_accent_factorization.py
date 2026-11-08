@@ -23,6 +23,9 @@ class FakeTensor:
         result = self.value.mean(axis=axis, keepdims=keepdim)
         return FakeTensor(result)
 
+    def __rmul__(self, other):
+        return FakeTensor(other * self.value)
+
     def unsqueeze(self, axis):
         return FakeTensor(np.expand_dims(self.value, axis=axis))
 
