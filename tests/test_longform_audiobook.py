@@ -13,6 +13,8 @@ from tools.longform_audiobook import (
     create_job_bundle,
     create_or_resume_job,
     force_rerender_chunks,
+    extract_pdf_manuscript,
+    normalize_manuscript_text,
     plan_audiobook_chunks,
     read_log_tail,
     read_manifest,
@@ -276,3 +278,128 @@ def test_audio_qa_flags_listening_review_without_claiming_quality(tmp_path):
     assert "very_short_chunk" in report["flagged_chunks"][0]["flags"]
     assert "unknown_text_tokens" in report["flagged_chunks"][0]["flags"]
     assert report["flagged_chunks"][0]["unknown_text_token_count"] == 2
+
+
+
+def test_line_wrapped_prose_reflows_but_blank_lines_and_punctuation_survive():
+    source = (
+        'Then the enlightening being Avalokiteshvara said to the Buddha, "The Buddha '
+        'speaks of ten stages of enlightening beings: the stage of intense joy, the stage '
+        'of freedom from defilement, the stage of radiance, the stage of blazing intellect, '
+        'the stage most difficult to conquer, the stage of presence, the stage of far going, '
+        'the stage of immovability, the stage of good intellect, and the stage of cloud of '
+        'teaching. You also speak of Buddhahood, making eleven stages. How many kinds of '
+        'purity, in how many portions, are these stages contained in?"'
+    )
+    wrapped = (
+        "Then the enlightening being Avalokiteshvara said to the Buddha, \n"
+        '"The Buddha speaks of ten stages of enlightening beings: the stage of intense joy,\n'
+        "the stage of freedom from defilement, the stage of radiance, the stage of blazing\n"
+        "intellect, the stage most difficult to conquer, the stage of presence, the stage of\n"
+        "far going, the stage of immovability, the stage of good intellect, and the stage\n"
+        "of cloud of teaching. You also speak of Buddhahood, making eleven stages. How many\n"
+        "kinds of purity, in how many portions, are these stages contained in?"'
+    )
+    normalized = normalize_manuscript_text(wrapped)
+    expected = normalize_manuscript_text(source)
+    assert normalized == expected
+    assert "beings: the stage" in normalized
+    assert "teaching. You also" in normalized
+    assert normalized.endswith('contained in?"')
+
+    paragraphs = normalize_manuscript_text(
+        "First line, with punctuation\ncontinued on the next line.\n\n"
+        "Second paragraph: still intact!"
+    )
+    assert paragraphs == (
+        "First line, with punctuation continued on the next line.\n\n"
+        "Second paragraph: still intact!"
+    )
+
+
+def test_line_wrap_cleanup_preserves_visible_hyphen_and_removes_soft_hyphen():
+    normalized = normalize_manuscript_text("A well-\nknown term and an inter\u00adnational word.")
+    assert normalized == "A well-known term and an international word."
+
+
+def test_pdf_extraction_reports_page_text_and_normalizes_line_breaks(tmp_path):
+    from reportlab.pdfgen import canvas
+    from pypdf import PdfReader
+
+    pdf_path = tmp_path / "line_wrapped_book.pdf"
+    canvas_obj = canvas.Canvas(str(pdf_path), pagesize=(612, 792))
+    canvas_obj.drawString(72, 720, "Then the enlightening being Avalokiteshvara said")
+    canvas_obj.drawString(72, 700, "to the Buddha, who listened carefully.")
+    canvas_obj.showPage()
+    canvas_obj.drawString(72, 720, "Chapter One: The Path")
+    canvas_obj.drawString(72, 700, "The second page contains selectable text.")
+    canvas_obj.save()
+
+    extracted = extract_pdf_manuscript(pdf_path)
+    assert extracted["page_count"] == 2
+    assert extracted["pdf_sha256"]
+    assert extracted["extraction_method"].startswith("pypdf")
+    assert "Avalokiteshvara said to the Buddha" in extracted["text"]
+    assert "Chapter One: The Path" in extracted["text"]
+    assert extracted["source_name"] == pdf_path.name
+    assert extracted["ocr_attempted"] is False
+    assert extracted["empty_or_image_only_pages"] == []
+
+
+def test_pdf_job_persists_original_pdf_and_refuses_different_pdf_on_resume(tmp_path):
+    source = "A PDF-derived sentence."
+    pdf_bytes = b"%PDF-test-content"
+    plan = plan_audiobook_chunks(source)
+    config = {"language": "en", "source_kind": "pdf"}
+    root, manifest, resumed = create_or_resume_job(
+        tmp_path,
+        "pdf-job",
+        source_text=source,
+        source_name="source.pdf",
+        plan=plan,
+        generation_config=config,
+        base_seed=-1,
+        source_pdf_bytes=pdf_bytes,
+        pdf_extraction_report={"page_count": 1, "warnings": []},
+    )
+    assert not resumed
+    assert (root / "source_original.pdf").read_bytes() == pdf_bytes
+    assert manifest["source_pdf_sha256"]
+    assert manifest["pdf_extraction_report"]["page_count"] == 1
+
+    _, _, resumed = create_or_resume_job(
+        tmp_path,
+        "pdf-job",
+        source_text=source,
+        source_name="source.pdf",
+        plan=plan,
+        generation_config=config,
+        base_seed=-1,
+        source_pdf_bytes=pdf_bytes,
+        pdf_extraction_report={"page_count": 1, "warnings": []},
+    )
+    assert resumed
+    try:
+        create_or_resume_job(
+            tmp_path,
+            "pdf-job",
+            source_text=source,
+            source_name="source.pdf",
+            plan=plan,
+            generation_config=config,
+            base_seed=-1,
+            source_pdf_bytes=b"%PDF-a-different-source",
+        )
+    except ValueError as exc:
+        assert "different source PDF" in str(exc)
+    else:
+        raise AssertionError("resuming with a different PDF should fail")
+
+
+def test_pdf_extraction_rejects_non_pdf_bytes():
+    try:
+        extract_pdf_manuscript(b"not a PDF")
+    except ValueError as exc:
+        assert "Could not read PDF" in str(exc)
+    else:
+        raise AssertionError("invalid PDF bytes should fail")
