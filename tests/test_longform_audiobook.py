@@ -211,7 +211,7 @@ def test_assemble_wav_rejects_mismatched_input_format(tmp_path):
 
 
 
-def test_force_rerender_preserves_old_audio_and_assigns_new_seed(tmp_path):
+def test_force_rerender_keeps_old_active_wav_until_atomic_replacement(tmp_path):
     source = "A sentence to rerender."
     plan = plan_audiobook_chunks(source)
     root, manifest, _ = create_or_resume_job(
@@ -238,13 +238,20 @@ def test_force_rerender_preserves_old_audio_and_assigns_new_seed(tmp_path):
     assert rerendered == ["C00001"]
     assert chunk["status"] == "pending"
     assert chunk["seed"] != original_seed
-    assert not wav_path.exists()
-    previous = chunk["previous_renders"][0]
-    previous_path = root / previous["relpath"]
-    assert previous_path.is_file()
-    assert previous["wav_sha256"] == original_hash
-    assert sha256_file(previous_path) == original_hash
-    assert previous["was_verified_complete"] is True
+    # The old active WAV remains in place until the new .partial.wav is atomically
+    # installed by the notebook's generator.
+    assert wav_path.is_file()
+    assert sha256_file(wav_path) == original_hash
+    assert chunk["pending_replacement"]["wav_sha256"] == original_hash
+    assert chunk.get("previous_renders", []) == []
+
+    # Simulate the generator installing the replacement.
+    replacement_audio = np.full(2400, 0.2, dtype=np.float32)
+    temporary = wav_path.with_name(wav_path.stem + ".partial.wav")
+    sf.write(temporary, replacement_audio, 24000, subtype="PCM_16")
+    import os
+    os.replace(temporary, wav_path)
+    assert sha256_file(wav_path) != original_hash
 
     try:
         force_rerender_chunks(root, manifest, ["C99999"])
@@ -253,6 +260,82 @@ def test_force_rerender_preserves_old_audio_and_assigns_new_seed(tmp_path):
     else:
         raise AssertionError("unknown rerender chunk ID should fail")
 
+
+def test_force_rerender_backup_is_opt_in_and_copies_instead_of_moving(tmp_path):
+    source = "A sentence to rerender."
+    plan = plan_audiobook_chunks(source)
+    root, manifest, _ = create_or_resume_job(
+        tmp_path, "rerender-backup", source_text=source, source_name="book.txt",
+        plan=plan, generation_config={"voice": "test"}, base_seed=22,
+    )
+    chunk = manifest["chunks"][0]
+    wav_path = root / chunk["wav_relpath"]
+    wav_path.parent.mkdir(parents=True, exist_ok=True)
+    sf.write(wav_path, np.full(2400, 0.1, dtype=np.float32), 24000, subtype="PCM_16")
+    from tools.longform_audiobook import sha256_file
+    original_hash = sha256_file(wav_path)
+    chunk.update({
+        "status": "complete",
+        "wav_sha256": original_hash,
+        "duration_seconds": 0.1,
+    })
+    write_manifest(root, manifest)
+
+    force_rerender_chunks(
+        root, manifest, ["C00001"],
+        new_random_seed=False,
+        preserve_previous=True,
+    )
+    previous = chunk["previous_renders"][0]
+    previous_path = root / previous["relpath"]
+    assert previous_path.is_file()
+    assert sha256_file(previous_path) == original_hash
+    assert wav_path.is_file()
+    assert sha256_file(wav_path) == original_hash
+
+
+def test_filter_plan_sections_selects_multiple_sections_and_renumbers_chunks():
+    from tools.longform_audiobook import filter_plan_sections
+
+    source = (
+        "Chapter 1\n\nFirst chapter sentence. More first chapter text.\n\n"
+        "Chapter 2\n\nSecond chapter sentence. More second chapter text.\n\n"
+        "Chapter 3\n\nThird chapter sentence."
+    )
+    plan = plan_audiobook_chunks(source, max_chars=120)
+    assert [item["section_id"] for item in plan["sections"]] == ["S001", "S002", "S003"]
+
+    selected = filter_plan_sections(plan, ["s003", "s001"])
+    assert [item["section_id"] for item in selected["sections"]] == ["S001", "S003"]
+    assert selected["all_section_count"] == 3
+    assert selected["section_count"] == 2
+    assert selected["selection_mode"] == "selected_sections"
+    assert selected["selected_section_ids"] == ["S001", "S003"]
+    assert [item["chunk_id"] for item in selected["chunks"]] == [
+        f"C{index:05d}" for index in range(1, len(selected["chunks"]) + 1)
+    ]
+    combined_text = " ".join(item["text"] for item in selected["chunks"])
+    assert "First chapter sentence" in combined_text
+    assert "Third chapter sentence" in combined_text
+    assert "Second chapter sentence" not in combined_text
+    assert selected["chunks"][-1]["boundary_after"] == "end"
+
+
+def test_filter_plan_sections_empty_means_all_and_unknown_ids_fail():
+    from tools.longform_audiobook import filter_plan_sections
+
+    plan = plan_audiobook_chunks(
+        "Chapter 1\n\nFirst sentence.\n\nChapter 2\n\nSecond sentence."
+    )
+    all_sections = filter_plan_sections(plan, [])
+    assert all_sections["section_count"] == 2
+    assert all_sections["selection_mode"] == "all"
+    try:
+        filter_plan_sections(plan, ["S999"])
+    except ValueError as exc:
+        assert "Unknown section ID" in str(exc)
+    else:
+        raise AssertionError("unknown section ID should fail")
 
 def test_audio_qa_flags_listening_review_without_claiming_quality(tmp_path):
     source = "A longish paragraph with enough words to form one chunk."
