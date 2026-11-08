@@ -365,3 +365,21 @@ The audiobook helper pin remains unchanged at `90c6070f4520cceee7fe475e16ad3485a
 
 **Next action:** reload the notebook code, use Accent Check on one saved chunk, load the same Job ID in Create / Resume, select only that chunk from the list, and rerender it. Then rerun Accent Check to compare the replacement. Retry the large AccentCL checkpoint download in the same runtime and confirm that it finishes size/hash verification.
 
+## AccentCL CUDA FP16 pooling overflow (2026-11-09)
+
+A live Colab Accent Check reached inference but failed with:
+
+`RuntimeError: value cannot be converted to type c10::Half without overflow`.
+
+**Root cause confirmed from the pinned upstream AccentCL source:** `src/accentcl/models/base.py`, in `AttentiveStatsPooling.forward()`, masks padded Whisper frames using `scores.masked_fill(~mask, -1e9)`. The notebook runs this model under CUDA float16 autocast, and `-1e9` cannot be represented as a float16 value. This is independent of checkpoint integrity, the Chatterbox TTS model, Diffusers' deprecation warning, and the optional `pkuseg` warning.
+
+**Fix:** after checking out and verifying the exact pinned upstream AccentCL commit, the helper applies one narrowly scoped source compatibility patch:
+`-1e9` → `torch.finfo(scores.dtype).min`.
+That value is finite and representable in the active score dtype, so masked frames remain excluded by softmax while CUDA FP16 autocast stays enabled. The patch refuses to modify the source if the expected upstream expression is absent or appears more than once, and it is idempotent.
+
+**Regression coverage:** exact source replacement, repeat-load idempotence, refusal on an unexpected upstream source, and confirmation that the loader applies the patch before importing the model.
+
+**Not yet verified:** live Colab AccentCL inference after this patch. The new pinned helper is `64d57bab6cb889b377dd44eb346bdd98798d942a`; the audiobook helper pin remains unchanged to preserve existing job fingerprints.
+
+**Next action:** rerun the updated helper-loading cell, then Accent Check on one short saved chunk. Confirm that it gets beyond attentive pooling and produces timestamped regional scores. Do not rerender Chatterbox chunks to address this AccentCL-only error.
+
