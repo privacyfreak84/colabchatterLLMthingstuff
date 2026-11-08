@@ -1,5 +1,7 @@
 import json
 import zipfile
+import sys
+import types
 from pathlib import Path
 
 import numpy as np
@@ -404,3 +406,158 @@ def test_pdf_extraction_rejects_non_pdf_bytes():
         assert "Could not read PDF" in str(exc)
     else:
         raise AssertionError("invalid PDF bytes should fail")
+
+
+
+def test_visual_line_wraps_reflow_to_one_paragraph_without_changing_punctuation():
+    raw = (
+        'Then the enlightening being Avalokiteshvara said to the Buddha, "The Buddha speaks of ten stages of enlightening beings:\n'
+        'the stage of intense joy, the stage of freedom from defilement, the stage of radiance,\n'
+        'the stage of blazing intellect, the stage most difficult to conquer, the stage of presence,\n'
+        'the stage of far going, the stage of immovability, the stage of good intellect, and the stage of cloud of teaching.\n'
+        'You also speak of Buddhahood, making eleven stages. How many kinds of purity, in how many portions,\n'
+        'are these stages contained in?"'
+    )
+    expected = (
+        'Then the enlightening being Avalokiteshvara said to the Buddha, "The Buddha speaks of ten stages of enlightening beings: '
+        'the stage of intense joy, the stage of freedom from defilement, the stage of radiance, '
+        'the stage of blazing intellect, the stage most difficult to conquer, the stage of presence, '
+        'the stage of far going, the stage of immovability, the stage of good intellect, and the stage of cloud of teaching. '
+        'You also speak of Buddhahood, making eleven stages. How many kinds of purity, in how many portions, '
+        'are these stages contained in?"'
+    )
+    assert normalize_manuscript_text(raw) == expected
+    for punctuation in (':', ',', '.', '"', '?'):
+        assert normalize_manuscript_text(raw).count(punctuation) == expected.count(punctuation)
+
+
+def test_line_reflow_preserves_blank_paragraphs_and_visible_hyphens():
+    raw = "A first line wraps-\ninto the next line.\n\nA second paragraph stays separate."
+    assert normalize_manuscript_text(raw) == (
+        "A first line wraps-into the next line.\n\nA second paragraph stays separate."
+    )
+
+
+def test_pdf_extraction_supports_page_ranges_and_records_page_provenance(monkeypatch):
+    class FakePage:
+        def __init__(self, text):
+            self.text = text
+
+        def extract_text(self, extraction_mode=None):
+            return self.text
+
+    class FakeReader:
+        def __init__(self, stream, strict=False):
+            self.pages = [
+                FakePage("Ignored first page has enough text but is outside the range."),
+                FakePage("A paragraph begins on the selected page and continues"),
+                FakePage("on the next page with its punctuation preserved."),
+            ]
+            self.is_encrypted = False
+            self.metadata = types.SimpleNamespace(title="Test source", author="Test author")
+
+    monkeypatch.setitem(
+        sys.modules,
+        "pypdf",
+        types.SimpleNamespace(PdfReader=FakeReader),
+    )
+    result = extract_pdf_manuscript(
+        b"%PDF-test-bytes",
+        page_start=2,
+        page_end=3,
+    )
+    assert result["text"] == (
+        "A paragraph begins on the selected page and continues on the next page with its punctuation preserved."
+    )
+    assert result["selected_page_start"] == 2
+    assert result["selected_page_end"] == 3
+    assert result["selected_page_count"] == 2
+    assert [item["page_number"] for item in result["page_spans"]] == [2, 3]
+    assert all(item["char_end"] > item["char_start"] for item in result["page_spans"])
+    assert result["pdf_metadata"]["title"] == "Test source"
+    assert result["line_wraps_normalized"] is True
+
+
+def test_scanned_pdf_with_no_selectable_text_is_rejected_with_ocr_guidance(monkeypatch):
+    class FakePage:
+        def extract_text(self, extraction_mode=None):
+            return ""
+
+    class FakeReader:
+        def __init__(self, stream, strict=False):
+            self.pages = [FakePage(), FakePage(), FakePage()]
+            self.is_encrypted = False
+            self.metadata = None
+
+    monkeypatch.setitem(
+        sys.modules,
+        "pypdf",
+        types.SimpleNamespace(PdfReader=FakeReader),
+    )
+    try:
+        extract_pdf_manuscript(b"%PDF-scanned")
+    except ValueError as exc:
+        assert "scanned/image-only" in str(exc)
+        assert "OCR" in str(exc)
+    else:
+        raise AssertionError("image-only PDF should not be accepted as a complete text source")
+
+
+def test_pdf_source_pages_are_attached_to_planned_chunks():
+    source = "A first sentence is on page two. A second sentence continues on page three."
+    split = source.index("A second")
+    plan = plan_audiobook_chunks(
+        source,
+        source_pages=[
+            {"page_number": 2, "char_start": 0, "char_end": split},
+            {"page_number": 3, "char_start": split, "char_end": len(source)},
+        ],
+    )
+    assert plan["source_pages"][0]["page_number"] == 2
+    assert plan["chunks"][0]["source_pages"] == [2]
+    assert plan["chunks"][1]["source_pages"] == [3]
+
+
+def test_pdf_original_is_preserved_in_job_folder_and_delivery_bundle(tmp_path):
+    import hashlib
+
+    source = "Chapter 1\n\nThe cleaned PDF manuscript text."
+    pdf_bytes = b"%PDF-original-source-for-test"
+    pdf_report = {
+        "pdf_sha256": hashlib.sha256(pdf_bytes).hexdigest(),
+        "selected_page_start": 1,
+        "selected_page_end": 1,
+    }
+    plan = plan_audiobook_chunks(source)
+    root, manifest, resumed = create_or_resume_job(
+        tmp_path,
+        "pdf-job",
+        source_text=source,
+        source_name="original.pdf",
+        plan=plan,
+        generation_config={"voice": "test"},
+        base_seed=2,
+        source_pdf_bytes=pdf_bytes,
+        pdf_extraction_report=pdf_report,
+    )
+    assert not resumed
+    assert (root / "source_original.pdf").read_bytes() == pdf_bytes
+    assert manifest["source_pdf_sha256"] == pdf_report["pdf_sha256"]
+    assert manifest["pdf_extraction_report"] == pdf_report
+
+    for chunk in manifest["chunks"]:
+        wav_path = root / chunk["wav_relpath"]
+        wav_path.parent.mkdir(parents=True, exist_ok=True)
+        sf.write(wav_path, np.full(2400, 0.05, dtype=np.float32), 24000, subtype="PCM_16")
+        from tools.longform_audiobook import sha256_file
+        chunk.update({
+            "status": "complete",
+            "wav_sha256": sha256_file(wav_path),
+            "duration_seconds": 0.1,
+        })
+    write_manifest(root, manifest)
+    assemble_job_masters(root, manifest)
+    build_audio_qa_report(root, manifest)
+    bundle = create_job_bundle(root)
+    with zipfile.ZipFile(bundle) as archive:
+        assert "source_original.pdf" in archive.namelist()
