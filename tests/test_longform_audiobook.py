@@ -298,7 +298,7 @@ def test_line_wrapped_prose_reflows_but_blank_lines_and_punctuation_survive():
         "intellect, the stage most difficult to conquer, the stage of presence, the stage of\n"
         "far going, the stage of immovability, the stage of good intellect, and the stage\n"
         "of cloud of teaching. You also speak of Buddhahood, making eleven stages. How many\n"
-        "kinds of purity, in how many portions, are these stages contained in?"'
+        'kinds of purity, in how many portions, are these stages contained in?"'
     )
     normalized = normalize_manuscript_text(wrapped)
     expected = normalize_manuscript_text(source)
