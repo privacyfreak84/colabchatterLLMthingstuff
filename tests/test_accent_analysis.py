@@ -208,11 +208,15 @@ def test_markdown_report_is_timestamped_and_has_no_transcript_or_source_text(tmp
 def test_accent_model_loader_pins_source_and_checkpoint_artifacts():
     import inspect
     source = inspect.getsource(accent.load_accentcl_model)
+    download_source = inspect.getsource(accent.download_verified_accent_checkpoint)
     assert len(accent.ACCENTCL_COMMIT) == 40
     assert len(accent.ACCENTCL_CHECKPOINT_REVISION) == 40
     assert len(accent.ACCENTCL_CHECKPOINT_SHA256) == 64
     assert accent.ACCENTCL_CHECKPOINT_SIZE_BYTES == 2_563_884_656
-    assert "revision=ACCENTCL_CHECKPOINT_REVISION" in source
+    assert "revision=ACCENTCL_CHECKPOINT_REVISION" in download_source
+    assert "local_dir" in download_source
+    assert "force_download" in download_source
+    assert "download_verified_accent_checkpoint(" in source
     assert "load_verified_accent_checkpoint(" in source
     assert "snapshot_download" in source
     assert "openai/whisper-large-v3" in source
@@ -269,3 +273,105 @@ def test_unverified_accent_checkpoint_is_never_unpickled(tmp_path, monkeypatch):
     with pytest.raises(RuntimeError, match="SHA-256 verification failed"):
         accent.load_verified_accent_checkpoint(checkpoint_path, torch_module=FakeTorch)
     assert FakeTorch.called is False
+
+def test_checkpoint_downloader_retries_with_force_after_wrong_size(tmp_path, monkeypatch):
+    import hashlib
+
+    payload = b"valid-checkpoint"
+    monkeypatch.setattr(accent, "ACCENTCL_CHECKPOINT_SIZE_BYTES", len(payload))
+    monkeypatch.setattr(
+        accent, "ACCENTCL_CHECKPOINT_SHA256", hashlib.sha256(payload).hexdigest()
+    )
+    calls = []
+
+    def fake_download(**kwargs):
+        calls.append(kwargs.copy())
+        destination = Path(kwargs["local_dir"]) / kwargs["filename"]
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(b"truncated" if len(calls) == 1 else payload)
+        return str(destination)
+
+    result = accent.download_verified_accent_checkpoint(
+        tmp_path, downloader=fake_download
+    )
+
+    assert Path(result).read_bytes() == payload
+    assert calls[0]["revision"] == accent.ACCENTCL_CHECKPOINT_REVISION
+    assert "cache_dir" not in calls[0]
+    assert calls[0]["local_dir"] == str(tmp_path / "accentcl-checkpoint")
+    assert calls[1]["force_download"] is True
+
+
+def test_checkpoint_downloader_forces_refresh_of_preexisting_bad_cache(tmp_path, monkeypatch):
+    import hashlib
+
+    payload = b"exact"
+    monkeypatch.setattr(accent, "ACCENTCL_CHECKPOINT_SIZE_BYTES", len(payload))
+    monkeypatch.setattr(
+        accent, "ACCENTCL_CHECKPOINT_SHA256", hashlib.sha256(payload).hexdigest()
+    )
+    destination = tmp_path / "accentcl-checkpoint" / accent.ACCENTCL_CHECKPOINT
+    destination.parent.mkdir(parents=True)
+    destination.write_bytes(b"broken-cache")
+    calls = []
+
+    def fake_download(**kwargs):
+        calls.append(kwargs.copy())
+        destination.write_bytes(payload)
+        return str(destination)
+
+    result = accent.download_verified_accent_checkpoint(
+        tmp_path, downloader=fake_download
+    )
+
+    assert Path(result).read_bytes() == payload
+    assert len(calls) == 1
+    assert calls[0]["force_download"] is True
+
+
+def test_checkpoint_downloader_reuses_valid_plain_file_without_network(tmp_path, monkeypatch):
+    import hashlib
+
+    payload = b"already verified"
+    monkeypatch.setattr(accent, "ACCENTCL_CHECKPOINT_SIZE_BYTES", len(payload))
+    monkeypatch.setattr(
+        accent, "ACCENTCL_CHECKPOINT_SHA256", hashlib.sha256(payload).hexdigest()
+    )
+    destination = tmp_path / "accentcl-checkpoint" / accent.ACCENTCL_CHECKPOINT
+    destination.parent.mkdir(parents=True)
+    destination.write_bytes(payload)
+
+    def unexpected_download(**kwargs):
+        raise AssertionError("A valid cached checkpoint should not be downloaded again.")
+
+    result = accent.download_verified_accent_checkpoint(
+        tmp_path, downloader=unexpected_download
+    )
+
+    assert Path(result) == destination
+
+
+def test_checkpoint_downloader_fails_clearly_after_two_bad_downloads(tmp_path, monkeypatch):
+    import hashlib
+
+    payload = b"expected"
+    monkeypatch.setattr(accent, "ACCENTCL_CHECKPOINT_SIZE_BYTES", len(payload))
+    monkeypatch.setattr(
+        accent, "ACCENTCL_CHECKPOINT_SHA256", hashlib.sha256(payload).hexdigest()
+    )
+    calls = []
+
+    def fake_download(**kwargs):
+        calls.append(kwargs.copy())
+        destination = Path(kwargs["local_dir"]) / kwargs["filename"]
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(b"still truncated")
+        return str(destination)
+
+    with pytest.raises(RuntimeError, match="after one forced retry"):
+        accent.download_verified_accent_checkpoint(
+            tmp_path, downloader=fake_download
+        )
+    assert len(calls) == 2
+    assert calls[1]["force_download"] is True
+
