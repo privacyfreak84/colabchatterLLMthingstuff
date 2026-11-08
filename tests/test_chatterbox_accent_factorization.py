@@ -233,7 +233,7 @@ def test_source_patch_separates_voice_identity_from_accent_prompt(monkeypatch, t
     # The style reference must not overwrite the narrator's speaker identity.
     assert not np.isclose(
         float(model.conds.gen["embedding"].value.mean()),
-        float(model.calls["s3_style"].mean()),
+        float(model.calls["s3_style"][0]),
     )
     # Installer is idempotent in notebook restarts/re-execution.
     second = patch.install_chatterbox_accent_factorization(DummyTTS)
