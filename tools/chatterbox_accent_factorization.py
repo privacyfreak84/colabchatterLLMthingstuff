@@ -108,10 +108,14 @@ def install_chatterbox_accent_factorization(model_class=None) -> dict:
         style_prompt_16k = style_16k[
             style_start_16k : style_start_16k + int(self.ENC_COND_LEN)
         ]
-        if len(style_prompt_24k) < 12_000 or len(style_prompt_16k) < 8_000:
+        if (
+            len(style_prompt_24k) < int(self.DEC_COND_LEN)
+            or len(style_prompt_16k) < int(self.ENC_COND_LEN)
+        ):
             raise ValueError(
-                "Accent/style guide is too short after the selected start time. "
-                "Choose an earlier offset or provide a longer recording."
+                "Accent/style guide does not contain the full configured S3Gen/T3 prompt "
+                "after the selected start time. Choose an earlier offset, a longer recording, "
+                "or a shorter conditioning profile."
             )
 
         # T3 speaker vector is derived only from the narrator identity recording.
