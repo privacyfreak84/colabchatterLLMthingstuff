@@ -171,6 +171,55 @@ def test_audiobook_generator_yields_match_all_nine_gradio_outputs():
     assert len(outputs.elts) == 9
 
 
+def test_pdf_ingestion_and_wrapped_line_reflow_are_wired_into_audiobook_ui():
+    notebook = load_notebook()
+    sources = code_sources(notebook)
+    setup = sources[0]
+    batch = sources[5]
+    ui = sources[6]
+    all_text = "\\n".join("".join(cell.get("source", [])) for cell in notebook["cells"])
+
+    assert '"pypdf"' in setup
+    assert "def read_audiobook_source(" in batch
+    assert "longform.extract_pdf_manuscript(" in batch
+    assert "longform.normalize_manuscript_text(" in batch
+    assert "pdf_page_start" in batch and "pdf_page_end" in batch
+    assert "source_pages=source_pages" in batch
+    assert "source_pdf_bytes=source_pdf_bytes" in batch
+    assert "pdf_extraction_report=ingestion_report" in batch
+    assert "cleaned_text_preview_output" in ui
+    assert "pdf_page_start_input" in ui and "pdf_page_end_input" in ui
+    assert 'file_types=[".pdf", ".txt", ".md"]' in ui
+    assert "punctuation is retained" in all_text.lower()
+    assert "scanned/image-only" in all_text.lower()
+
+
+def test_preview_callback_returns_plan_and_cleaned_text_preview():
+    notebook = load_notebook()
+    sources = code_sources(notebook)
+    batch_source = sources[5]
+    ui_source = sources[6]
+    batch_tree = ast.parse(batch_source)
+    preview_function = next(
+        node for node in batch_tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "preview_audiobook_plan"
+    )
+    assert len(preview_function.args.args) == 9
+
+    ui_tree = ast.parse(ui_source)
+    preview_click = next(
+        node for node in ast.walk(ui_tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "click"
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "preview_button"
+    )
+    outputs = next(keyword.value for keyword in preview_click.keywords if keyword.arg == "outputs")
+    assert isinstance(outputs, ast.List)
+    assert len(outputs.elts) == 2
+
+
 def test_gradio_ui_has_no_login_authentication():
     notebook = load_notebook()
     sources = code_sources(notebook)
