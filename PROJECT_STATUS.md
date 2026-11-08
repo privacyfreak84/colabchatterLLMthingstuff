@@ -168,26 +168,42 @@ nextrecon7.txt: 45 new clips (nine terms, HYBRID plus a plain-English control se
 
 **Accent, not fixed by splicing:** a stand-in option renders the sentence with a plain English word in the term's slot (Alexandria, Montana, Mediterranean manuscript, Emily, Alabama, banana, Sahara, chapter), so a Sanskrit spelling in the text cannot cue the accent; the HYBRID term is swapped in afterwards. This is a hypothesis to test, not an established cause. The aligned-splice report is saved as aligned_splices_report.json in the run folder.
 
-## Standalone custom-text notebook extension (2026-11-08)
+## Standalone custom-text notebook extensions (2026-11-08)
 
-The third notebook now has an optional **Accent Check** tab. It uses the open-source AccentCL regional English accent classifier over overlapping 15-second windows with a 10-second hop. It accepts saved audiobook WAV masters/sections or uploaded WAV/MP3 files, streams decoding through FFmpeg, and writes timestamped JSON/CSV reports without speech transcription or sentence text. The UI temporarily unloads Chatterbox to free GPU memory and reloads it after the scan.
+### Spoiler-free accent analysis
 
-- New helper: \`tools/accent_analysis.py\`; pinned upstream AccentCL source commit \`a37811a5b772b1056cd90d44666585e35aedd657\`.
-- Model: AccentCL seven-class checkpoint, with Whisper Large v3. Both model assets are cached beneath the selected Accent Cache storage path; when Drive persistence is enabled, they remain available across Colab runtime resets. First use requires multi-gigabyte downloads; GPU strongly recommended.
-- CPU-side CI: **160 passed** on commit \`be19176eedd45bb348f36340f3059c0a08a6f4ce\`, workflow run [113](https://github.com/privacyfreak84/colabchatterLLMthingstuff/actions/runs/42462049087).
-- Not yet tested: downloading/loading the actual AccentCL checkpoint in Colab, running GPU inference, or evaluating how accurately it classifies this user's Chatterbox narrator. The published benchmark is not a guarantee on synthetic speech.
-- This is a broad regional triage aid, not phoneme-level pronunciation QA. Scores are uncalibrated, and human spot-checking remains the authority. This extension does not change the document approval gate or authorize full-book synthesis.
+The third notebook has an optional **Accent Check** tab. It uses the open-source AccentCL regional English accent classifier over overlapping 15-second windows with a 10-second hop. It accepts saved audiobook WAV masters/sections or uploaded WAV/MP3 files, streams decoding through FFmpeg, and writes timestamped JSON/CSV reports without speech transcription or sentence text. The UI temporarily unloads Chatterbox to free GPU memory and reloads it after the scan.
+
+- Helper: `tools/accent_analysis.py`; pinned upstream AccentCL source commit `a37811a5b772b1056cd90d44666585e35aedd657`.
+- Model: AccentCL seven-class checkpoint, with Whisper Large v3. Both model assets are cached beneath the selected Accent Cache storage path; Drive persistence keeps them across Colab resets. First use requires multi-gigabyte downloads; a GPU is strongly recommended.
+- The scanner is a broad regional triage aid, not phoneme-level pronunciation QA. Scores are uncalibrated, and human spot-checking remains the authority.
+- Not yet tested: downloading/loading the actual AccentCL checkpoint in Colab, running GPU inference, or evaluating its accuracy on this synthetic Chatterbox narrator.
+
+### Source selection, selective rerendering, and master assembly
+
+The Audiobook Jobs workflow now supports selecting exactly what is spoken and replacing only defective audio:
+
+- **PDF:** one-based inclusive page range. Set first and last page to the same number to speak one page; last page `0` means the final PDF page. Selectable text extraction only, no OCR.
+- **TXT/Markdown/pasted text:** one-based inclusive blank-line paragraph range. These formats do not have intrinsic pages, so the notebook does not pretend that they do. Visual line-wrap cleanup runs before paragraph numbering.
+- **Detected sections:** preview the source to populate a multi-select list of headings/chapters. Choose one or more sections; an empty selection means all sections. The same control works with PDF, TXT, Markdown, and pasted text.
+- **Repair:** enter one or more chunk IDs such as `C00007` or section IDs such as `S002`. A section ID rerenders all chunks in that section. Reuse the same Job ID and identical source/range/voice/synthesis settings.
+- **Replacement policy:** by default a successful rerender atomically replaces the active chunk WAV, without keeping an old revision. An opt-in checkbox copies the previous WAV to `revisions/` as a backup. The old valid WAV remains active if synthesis fails before replacement.
+- **Master outputs:** completed jobs automatically create separate section WAVs and one combined WAV. Full-source jobs use `whole_book_master.wav`; jobs limited to selected sections use `selected_sections_master.wav`. The delivery ZIP includes the appropriate combined master. Rerendering rebuilds the section and combined masters from the latest active chunk files.
+- Helper: `tools/longform_audiobook.py`; selected-section plan filtering, text paragraph-range selection, atomic replacement/optional backups, and partial/full master assembly are CPU-tested.
+- Existing jobs remain resumable after helper-only version changes when their source, selected ranges, chunk plan, narrator reference, and synthesis settings still match.
+- CI: **170 passed** on commit `e58aa7697dcba97324bc9fbb996b333ba9f81cba`, workflow run [137](https://github.com/privacyfreak84/colabchatterLLMthingstuff/actions/runs/42468461887). The subsequent README-only commit also passed run [138](https://github.com/privacyfreak84/colabchatterLLMthingstuff/actions/runs/42468764620).
+- Not yet tested: launching the updated notebook in a live Colab session, generating a pilot, scanning the resulting narrator audio, rerendering a selected chunk/section on GPU, and listening to the rebuilt master.
+- These additions do not change the separate document-first manuscript approval gate or authorize full-book synthesis.
 
 ## Immediate next action
 
-**Single next action:** smoke-test the new Accent Check tab on a short, known North American English clip, a known British Isles English clip, and one existing narrator retest clip. This establishes whether the regional predictions are useful on this synthetic voice before interpreting a whole-book report. No manuscript text or book passage is needed for this calibration.
+**Single next action:** smoke-test the updated Audiobook Jobs UI in Colab using a short two-section text file. Preview it, select only one section, synthesize it, check the section WAV and `selected_sections_master.wav`, rerender one chunk and then the entire section, and verify that the new active audio replaces the old one. Repeat with a searchable PDF using the same first/last page to test single-page selection. This validates the new selection and replacement workflow before any long audiobook run.
 
-After the scanner check, return to the existing Pass 6 listening checkpoint: build/listen to the aligned splices (eight files, built from the existing nextrecon7 clips, no model needed: `python scripts/make_aligned_splices.py --retest-dir ~/audiobook-narrator-retest/v3-narrator-retest --base full`) and judge the pauses, stretched words, pitch, pace, and remaining British-accent drift.
+After that smoke test, validate Accent Check on known North American and British Isles clips plus one narrator retest clip. Then return to the existing Pass 6 listening checkpoint: build/listen to the aligned splices (eight files, built from the existing nextrecon7 clips, no model needed: `python scripts/make_aligned_splices.py --retest-dir ~/audiobook-narrator-retest/v3-narrator-retest --base full`) and judge pauses, stretched words, pitch, pace, and remaining accent drift.
 
-If the accent persists, test the stand-in renders: `python scripts/run_narrator_retest_local.py --narrator ~/narrator_reference.wav --remaining-terms --routes hybrid --english-standin --aligned-splices` (see docs/local_cpu_setup.md). Per-term choices (plain English or Hindi-bridged) and the approved spoken forms stay open for the eight terms other than Buddha until the user is satisfied with the result.
+If the accent persists, test the stand-in renders: `python scripts/run_narrator_retest_local.py --narrator ~/narrator_reference.wav --remaining-terms --routes hybrid --english-standin --aligned-splices` (see docs/local_cpu_setup.md). Per-term choices and spoken forms remain open for the eight terms other than Buddha until the user is satisfied.
 
-Then the rest of Pass 6: the reversible text-to-spoken-form mapping for all 13 terms, a repeated-term consistency check, and an approved representative narration passage. Pass 7 and full-book synthesis stay locked until those are approved.
-
+Then complete Pass 6: the reversible text-to-spoken-form mapping for all 13 terms, a repeated-term consistency check, and an approved representative narration passage. Pass 7 and full-book synthesis stay locked until those are approved.
 ## Decision policy
 
 - Code added is not the same as a completed experiment.
