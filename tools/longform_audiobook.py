@@ -8,6 +8,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+from io import BytesIO
 import re
 import secrets
 import tempfile
@@ -21,6 +22,160 @@ import soundfile as sf
 
 MANIFEST_SCHEMA_VERSION = 1
 MAX_SOURCE_CHARACTERS = 4_000_000
+MAX_PDF_BYTES = 100 * 1024 * 1024
+MAX_PDF_PAGES = 2500
+
+
+def normalize_manuscript_text(text: str) -> str:
+    """Reflow physical line wraps into continuous paragraphs without changing punctuation.
+
+    Blank lines remain paragraph boundaries. Recognized standalone headings remain
+    separate. Soft hyphens and layout-only whitespace are removed; visible hyphens
+    are retained and joined directly to the next wrapped line.
+    """
+    if not isinstance(text, str):
+        raise TypeError("Manuscript text must be a string.")
+    text = text.replace("\ufeff", "").replace("\u00ad", "")
+    text = text.replace("\r\n", "\n").replace("\r", "\n").replace("\x0c", "\n")
+    text = text.replace("\u00a0", " ")
+    paragraphs: list[str] = []
+    current_lines: list[str] = []
+
+    def flush() -> None:
+        nonlocal current_lines
+        if current_lines:
+            joined = current_lines[0]
+            for line in current_lines[1:]:
+                if joined.endswith("-"):
+                    joined += line
+                else:
+                    joined += " " + line
+            joined = re.sub(r"[ \t]+", " ", joined).strip()
+            if joined:
+                paragraphs.append(joined)
+        current_lines = []
+
+    for raw_line in text.split("\n"):
+        line = re.sub(r"[ \t]+", " ", raw_line).strip()
+        if not line:
+            flush()
+            continue
+        if _heading_title(line):
+            flush()
+            paragraphs.append(line)
+            continue
+        current_lines.append(line)
+    flush()
+
+    normalized = "\n\n".join(paragraphs).strip()
+    if len(normalized) > MAX_SOURCE_CHARACTERS:
+        raise ValueError(
+            f"Manuscript exceeds the {MAX_SOURCE_CHARACTERS:,}-character safety limit."
+        )
+    return normalized
+
+
+def extract_pdf_manuscript(pdf_source: str | Path | bytes) -> dict:
+    """Extract text from a text-based PDF and report pages that may need OCR/manual review.
+
+    OCR is intentionally not attempted. Image-only/scanned pages are flagged so the
+    user cannot mistake a low-text extraction for a complete manuscript.
+    """
+    try:
+        from pypdf import PdfReader
+    except ImportError as exc:
+        raise RuntimeError("PDF support requires pypdf. Rerun the notebook setup cell.") from exc
+
+    source_name = "uploaded.pdf"
+    if isinstance(pdf_source, bytes):
+        pdf_bytes = pdf_source
+        if len(pdf_bytes) > MAX_PDF_BYTES:
+            raise ValueError(f"PDF exceeds the {MAX_PDF_BYTES // (1024 * 1024)} MiB safety limit.")
+        stream = BytesIO(pdf_bytes)
+    else:
+        path = Path(pdf_source)
+        source_name = path.name
+        if not path.is_file():
+            raise FileNotFoundError(f"PDF not found: {path}")
+        if path.stat().st_size > MAX_PDF_BYTES:
+            raise ValueError(f"PDF exceeds the {MAX_PDF_BYTES // (1024 * 1024)} MiB safety limit.")
+        pdf_bytes = path.read_bytes()
+        stream = BytesIO(pdf_bytes)
+
+    try:
+        reader = PdfReader(stream, strict=False)
+        if reader.is_encrypted:
+            try:
+                result = reader.decrypt("")
+            except Exception as exc:
+                raise ValueError("This PDF is encrypted and cannot be opened with an empty password.") from exc
+            if not result:
+                raise ValueError("This PDF is password-protected. Remove the password before uploading.")
+        page_count = len(reader.pages)
+        if page_count == 0:
+            raise ValueError("The PDF contains no pages.")
+        if page_count > MAX_PDF_PAGES:
+            raise ValueError(f"PDF has {page_count:,} pages; the safety limit is {MAX_PDF_PAGES:,}.")
+        page_texts = []
+        page_records = []
+        for page_number, page in enumerate(reader.pages, start=1):
+            try:
+                page_text = page.extract_text(extraction_mode="layout") or ""
+            except TypeError:
+                page_text = page.extract_text() or ""
+            except Exception:
+                page_text = page.extract_text() or ""
+            page_text = page_text.replace("\x00", "").strip()
+            page_texts.append(page_text)
+            char_count = len(re.sub(r"\s+", "", page_text))
+            page_records.append({
+                "page": page_number,
+                "characters_without_whitespace": char_count,
+                "likely_image_only_or_empty": char_count < 20,
+            })
+    except ValueError:
+        raise
+    except Exception as exc:
+        raise ValueError(f"Could not read PDF: {type(exc).__name__}: {exc}") from exc
+
+    raw_text = "\n".join(page_texts)
+    normalized_text = normalize_manuscript_text(raw_text)
+    empty_pages = [
+        item["page"] for item in page_records
+        if item["likely_image_only_or_empty"]
+    ]
+    low_text_pages = [
+        item["page"] for item in page_records
+        if item["characters_without_whitespace"] < 80
+    ]
+    total_chars = sum(item["characters_without_whitespace"] for item in page_records)
+    sparse_ratio = len(low_text_pages) / page_count
+    warnings = []
+    if not normalized_text or total_chars < 100:
+        warnings.append("Almost no selectable text was extracted. This is probably a scanned/image-only PDF; OCR or a text-based PDF is required.")
+    elif empty_pages:
+        warnings.append(
+            f"{len(empty_pages)} page(s) contain almost no selectable text. These may be scanned pages, blank pages, or figures; inspect them before synthesis."
+        )
+    elif sparse_ratio > 0.20:
+        warnings.append(
+            f"{len(low_text_pages)} page(s) contain unusually little text. Check the page-by-page extraction report."
+        )
+
+    return {
+        "text": normalized_text,
+        "source_name": source_name,
+        "pdf_sha256": sha256_bytes(pdf_bytes),
+        "pdf_size_bytes": len(pdf_bytes),
+        "page_count": page_count,
+        "extracted_characters": len(normalized_text),
+        "page_records": page_records,
+        "empty_or_image_only_pages": empty_pages,
+        "low_text_pages": low_text_pages,
+        "warnings": warnings,
+        "ocr_attempted": False,
+        "extraction_method": "pypdf layout text extraction",
+    }
 
 
 def utc_now() -> str:
@@ -147,10 +302,9 @@ def plan_audiobook_chunks(
     section_pause_seconds: float = 1.0,
 ) -> dict:
     """Plan paragraph-aware chunks and section boundaries for one approved text file."""
-    if not isinstance(source_text, str) or not source_text.strip():
-        raise ValueError("The manuscript is empty.")
-    if len(source_text) > MAX_SOURCE_CHARACTERS:
-        raise ValueError(f"Manuscript exceeds the {MAX_SOURCE_CHARACTERS:,}-character safety limit.")
+    source_text = normalize_manuscript_text(source_text)
+    if not source_text:
+        raise ValueError("The manuscript is empty after line-wrap cleanup.")
     if not 120 <= int(max_chars) <= 600:
         raise ValueError("Chunk size must be between 120 and 600 characters.")
     pauses = (chunk_pause_seconds, paragraph_pause_seconds, section_pause_seconds)
@@ -384,6 +538,8 @@ def create_or_resume_job(
     plan: dict,
     generation_config: dict,
     base_seed: int,
+    source_pdf_bytes: bytes | None = None,
+    pdf_extraction_report: dict | None = None,
 ) -> tuple[Path, dict, bool]:
     """Create a job or safely reopen one only when source, plan, and settings match."""
     resolved_id = safe_job_id(job_id)
@@ -391,7 +547,9 @@ def create_or_resume_job(
     root.mkdir(parents=True, exist_ok=True)
     source_path = root / "source.txt"
     manifest_path = root / "manifest.json"
-    source_hash = sha256_text(source_text.replace("\r\n", "\n").replace("\r", "\n"))
+    source_text = normalize_manuscript_text(source_text)
+    source_hash = sha256_text(source_text)
+    source_pdf_hash = sha256_bytes(source_pdf_bytes) if source_pdf_bytes is not None else None
     config_json = json.dumps(generation_config, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
     config_hash = sha256_text(config_json)
     plan_identity = [
@@ -409,6 +567,8 @@ def create_or_resume_job(
         manifest = read_manifest(root)
         if manifest.get("source_sha256") != source_hash:
             raise ValueError("This job ID already belongs to different manuscript text. Use a new job ID.")
+        if manifest.get("source_pdf_sha256") != source_pdf_hash:
+            raise ValueError("This job ID was created from a different source PDF. Use the original PDF or a new job ID.")
         if manifest.get("generation_config_sha256") != config_hash:
             raise ValueError("This job ID has different voice/settings/reference configuration. Use the original settings or a new job ID.")
         if manifest.get("plan_sha256") != plan_hash:
@@ -428,11 +588,15 @@ def create_or_resume_job(
                 chunk["error"] = "Saved audio missing or failed integrity verification; scheduled for regeneration."
         if not source_path.exists():
             source_path.write_text(source_text, encoding="utf-8")
+        if source_pdf_bytes is not None and not (root / "source_original.pdf").exists():
+            (root / "source_original.pdf").write_bytes(source_pdf_bytes)
         write_manifest(root, manifest)
         append_job_event(root, "job_resumed", "Reopened saved job after verifying source, settings, plan, and completed chunk files.", details={"resume_count": manifest["resume_count"]})
         return root, manifest, True
 
     source_path.write_text(source_text, encoding="utf-8")
+    if source_pdf_bytes is not None:
+        (root / "source_original.pdf").write_bytes(source_pdf_bytes)
     (root / "chunks").mkdir(exist_ok=True)
     (root / "sections").mkdir(exist_ok=True)
     chunks = []
@@ -457,6 +621,9 @@ def create_or_resume_job(
         "source_name": Path(source_name).name,
         "source_sha256": source_hash,
         "source_characters": len(source_text),
+        "source_pdf_sha256": source_pdf_hash,
+        "source_pdf_filename": Path(source_name).name if source_pdf_bytes is not None else None,
+        "pdf_extraction_report": pdf_extraction_report or None,
         "generation_config": generation_config,
         "generation_config_sha256": config_hash,
         "plan_sha256": plan_hash,
@@ -768,7 +935,7 @@ def create_job_bundle(job_dir: str | Path) -> Path:
     bundle = root / "audiobook_delivery_bundle.zip"
     temporary = bundle.with_suffix(".zip.partial")
     with zipfile.ZipFile(temporary, "w", compression=zipfile.ZIP_STORED, allowZip64=True) as archive:
-        for relative in ["source.txt", "manifest.json", "events.jsonl", "job.log", "whole_book_master.wav", "qa_report.json"]:
+        for relative in ["source.txt", "source_original.pdf", "manifest.json", "events.jsonl", "job.log", "whole_book_master.wav", "qa_report.json"]:
             path = root / relative
             if path.is_file():
                 archive.write(path, arcname=relative)
