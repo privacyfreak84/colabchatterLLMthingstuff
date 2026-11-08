@@ -437,3 +437,42 @@ def test_checkpoint_downloader_reuses_verified_legacy_hub_cache(tmp_path, monkey
 
     assert Path(result) == expected
 
+def test_accentcl_fp16_mask_patch_replaces_unrepresentable_sentinel(tmp_path):
+    source_path = tmp_path / "src" / "accentcl" / "models" / "base.py"
+    source_path.parent.mkdir(parents=True)
+    source_path.write_text(
+        "import torch\\n"
+        "scores = self.attn(x).squeeze(-1)\\n"
+        "scores = scores.masked_fill(~mask, -1e9)\\n",
+        encoding="utf-8",
+    )
+
+    assert accent.patch_accentcl_fp16_mask_overflow(tmp_path) is True
+    patched = source_path.read_text(encoding="utf-8")
+    assert "torch.finfo(scores.dtype).min" in patched
+    assert "-1e9" not in patched
+    # The patch is idempotent when the same pinned source is loaded again.
+    assert accent.patch_accentcl_fp16_mask_overflow(tmp_path) is False
+
+
+def test_accentcl_fp16_mask_patch_refuses_unexpected_upstream_source(tmp_path):
+    source_path = tmp_path / "src" / "accentcl" / "models" / "base.py"
+    source_path.parent.mkdir(parents=True)
+    original = "scores = scores.masked_fill(~mask, -1000)\\n"
+    source_path.write_text(original, encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="expected one vulnerable masked_fill"):
+        accent.patch_accentcl_fp16_mask_overflow(tmp_path)
+
+    assert source_path.read_text(encoding="utf-8") == original
+
+
+def test_accentcl_model_loader_applies_dtype_safe_pooling_patch_before_import():
+    import inspect
+
+    source = inspect.getsource(accent.load_accentcl_model)
+    assert "patch_accentcl_fp16_mask_overflow(repo_path)" in source
+    patch_source = inspect.getsource(accent.patch_accentcl_fp16_mask_overflow)
+    assert "torch.finfo(scores.dtype).min" in patch_source
+    assert "scores.masked_fill(~mask, -1e9)" in patch_source
+
