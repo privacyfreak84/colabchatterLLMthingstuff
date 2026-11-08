@@ -84,7 +84,7 @@ It adds an optional second input called `accent_prompt_path`:
 
 The patch explicitly replaces the S3Gen prompt dictionary's speaker x-vector with one computed from the narrator identity recording. In other words, the second recording provides pronunciation/acoustic style context without deliberately replacing the target speaker embedding.
 
-The patch applies to both Quick TTS and Audiobook Jobs in notebook 03. If the new field is left blank, it uses the narrator reference for both streams, preserving the normal single-reference workflow. The model checkpoint weights are unchanged; this is an inference-architecture modification, not a fine-tune.
+The patch applies to both Quick TTS and Audiobook Jobs in notebook 03. If the guide field is left blank and the prompt offset is zero, it uses the narrator reference for both streams, preserving the normal single-reference workflow. A prompt-start offset can select a later segment from the same recording: for the 19.6-second narrator clip, upload the original clip in both reference fields and set the style-guide start to 6 seconds. This gives T3 its following 6-second prompt and S3Gen its following 10-second prompt, while the speaker embeddings remain derived from the identity input. The patch rejects a guide segment that does not contain the full configured prompt windows. The model checkpoint weights are unchanged; this is an inference-architecture modification, not a fine-tune.
 
 ### What to use for an American-English test
 
