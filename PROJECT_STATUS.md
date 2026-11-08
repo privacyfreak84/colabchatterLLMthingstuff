@@ -195,9 +195,21 @@ The Audiobook Jobs workflow now supports selecting exactly what is spoken and re
 - Not yet tested: launching the updated notebook in a live Colab session, generating a pilot, scanning the resulting narrator audio, rerendering a selected chunk/section on GPU, and listening to the rebuilt master.
 - These additions do not change the separate document-first manuscript approval gate or authorize full-book synthesis.
 
+### Optional custom output naming (2026-11-08)
+
+The Audiobook Jobs tab now has an optional **Custom output-name prefix**:
+
+- The prefix is applied to every generated chunk WAV, section/chapter WAV, combined master WAV, and delivery ZIP. For example, `Buddhist Yoga_c00001.wav`, `Buddhist Yoga_s001_chapter-one.wav`, `Buddhist Yoga_whole_book_master.wav`, and `Buddhist Yoga_audiobook_delivery_bundle.zip`.
+- The default Job ID and storage folder remain unchanged. The Job ID is still the resume/recovery key; the custom prefix names the deliverable files.
+- The name is validated as a filename stem only (no folder paths, reserved filename characters, or unsafe reserved device names), up to 96 characters. Do not include an extension.
+- A custom name is fixed for that Job ID. On resume, leave the field blank to reuse the saved name or enter the same name; a different name is rejected rather than silently moving active WAV files.
+- Accent Check's saved-audio list also discovers custom-named full and selected-section masters.
+- Automated verification: **175 tests passed** on the notebook/helper implementation, including unsafe-name rejection, chunk/section/master/ZIP filenames, resume-name preservation, and notebook/UI wiring. Workflow run [152](https://github.com/privacyfreak84/colabchatterLLMthingstuff/actions/runs/42471448428).
+- Not yet tested: a live Colab session generating WAVs with a custom name, resuming after a runtime reset, rerendering, and confirming that Accent Check lists the custom-named masters. CI uses synthetic WAVs and static notebook checks, not live Chatterbox synthesis.
+
 ## Immediate next action
 
-**Single next action:** smoke-test the updated Audiobook Jobs UI in Colab using a short two-section text file. Preview it, select only one section, synthesize it, check the section WAV and `selected_sections_master.wav`, rerender one chunk and then the entire section, and verify that the new active audio replaces the old one. Repeat with a searchable PDF using the same first/last page to test single-page selection. This validates the new selection and replacement workflow before any long audiobook run.
+**Single next action:** smoke-test the updated Audiobook Jobs UI in Colab using a short two-section text file. Set a custom output-name prefix, preview it, select only one section, synthesize it, verify the prefixed chunk/section WAVs, prefixed `selected_sections_master.wav`, and prefixed delivery ZIP, then rerender a chunk and the section. Resume once with the prefix field blank to confirm the saved name is reused. Repeat with a searchable PDF using the same first/last page to test single-page selection. This validates selection, naming, replacement, and resume behavior before any long audiobook run.
 
 After that smoke test, validate Accent Check on known North American and British Isles clips plus one narrator retest clip. Then return to the existing Pass 6 listening checkpoint: build/listen to the aligned splices (eight files, built from the existing nextrecon7 clips, no model needed: `python scripts/make_aligned_splices.py --retest-dir ~/audiobook-narrator-retest/v3-narrator-retest --base full`) and judge pauses, stretched words, pitch, pace, and remaining accent drift.
 
