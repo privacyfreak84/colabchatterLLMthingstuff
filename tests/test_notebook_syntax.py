@@ -393,6 +393,33 @@ def test_custom_output_name_is_wired_through_audiobook_generation_and_accent_sca
     assert "output_name" in batch
 
 
+def test_accent_factorization_patch_is_pinned_and_wired_into_audiobook_jobs():
+    notebook = load_notebook()
+    sources = code_sources(notebook)
+    setup = sources[0]
+    batch = sources[5]
+    ui = sources[6]
+
+    assert "ACCENT_FACTORIZATION_PATCH_COMMIT = \"85bab9a56c7fae2768ea06090e7d47e532372c94\"" in setup
+    assert "install_chatterbox_accent_factorization(ChatterboxMultilingualTTS)" in setup
+    assert "accent_prompt_path=" in batch
+    assert "uploaded_accent_reference: str | None" in batch
+    assert "accent_reference_source_sha256" in batch
+    assert "accent_reference_mode" in batch
+    assert "batch_accent_reference_audio_input = gr.Audio(" in ui
+    assert "batch_accent_reference_audio_input," in ui
+    assert "The narrator reference supplies speaker identity" in ui
+
+    # The patched model must factor the two input paths before decoding, not score
+    # or rewrite generated audio afterwards.
+    patch_source = (REPO_ROOT / "tools" / "chatterbox_accent_factorization.py").read_text(encoding="utf-8")
+    assert "self.ve.embeds_from_wavs([identity_16k]" in patch_source
+    assert "self.s3gen.embed_ref(" in patch_source
+    assert "style_prompt_24k" in patch_source
+    assert 's3gen_ref_dict["embedding"] = self.s3gen.speaker_encoder.inference(identity_for_s3)' in patch_source
+    assert "accent_prompt_path" in patch_source
+
+
 def test_non_pdf_inputs_expose_paragraph_range_controls():
     notebook = load_notebook()
     sources = code_sources(notebook)
