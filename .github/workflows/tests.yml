@@ -20,3 +20,10 @@ jobs:
         run: python -m pip install --upgrade pytest numpy soundfile pocketsphinx praat-parselmouth pypdf reportlab
       - name: Run helper tests
         run: python -m pytest -q
+      - name: Upload archive for transfer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Buddhist_Yoga_reconnaissance
+          path: Buddhist_Yoga_reconnaissance.zip
+          if-no-files-found: error
+          retention-days: 1
