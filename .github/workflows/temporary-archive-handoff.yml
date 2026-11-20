@@ -1,0 +1,24 @@
+name: Temporary archive handoff
+
+on:
+  push:
+    branches:
+      - chatgpt-temp-transfer-20261120
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Upload the exact archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: Buddhist_Yoga_reconnaissance
+          path: Buddhist_Yoga_reconnaissance.zip
+          if-no-files-found: error
+          retention-days: 1
